@@ -39,6 +39,7 @@ enum GffType {
     MRNA,
     UTR5,
     UTR3,
+    CDS,
     OTHER
 };
 
@@ -53,6 +54,9 @@ static GffType gffTypeFromString(string& s) {
     else if (s.compare("three_prime_utr") == 0) {
         return UTR3;
     }
+    else if (s.compare("CDS") == 0) {
+        return CDS;
+    }
     else {
         return OTHER;
     }
@@ -63,10 +67,12 @@ class GFF {
 private:
     
     GffType type;
-    
+    int32_t start;
+    int32_t end;
     
     
     string id;
+    string cdsid;
     string name;
     string parent;
     double coverage;
@@ -75,11 +81,6 @@ private:
 public:
 
     GFF() {
-    }
-
-    
-    GFF(GffType type, double coverage, string id, string identity, string name, string parent) :
-        type(type), coverage(coverage), id(id), identity(identity), name(name), parent(parent)  {
     }
 
     virtual ~GFF() {}
@@ -99,6 +100,15 @@ public:
     void SetId(string id) {
         this->id = id;
     }
+    
+    string GetCdsid() const {
+        return cdsid;
+    }
+
+    void SetCdsid(string cdsid) {
+        this->cdsid = cdsid;
+    }
+
 
     string GetIdentity() const {
         return identity;
@@ -131,6 +141,23 @@ public:
     void SetType(GffType type) {
         this->type = type;
     }
+    
+    int32_t GetEnd() const {
+        return end;
+    }
+
+    void SetEnd(int32_t end) {
+        this->end = end;
+    }
+
+    int32_t GetStart() const {
+        return start;
+    }
+
+    void SetStart(int32_t start) {
+        this->start = start;
+    }
+
 
     
     static shared_ptr<GFF> parse(const string& line) {
@@ -145,6 +172,9 @@ public:
         shared_ptr<GFF> gff = shared_ptr<GFF>(new GFF());
         
         gff->SetType(gffTypeFromString(parts[2]));
+        gff->SetStart(lexical_cast<int32_t>(parts[3]));
+        gff->SetEnd(lexical_cast<int32_t>(parts[4]));
+        
         
         vector<string> attrParts;
         boost::split( attrParts, parts[8], boost::is_any_of(";"), boost::token_compress_on );
@@ -158,8 +188,12 @@ public:
             if (key->compare("ID") == 0) {
                 vector<string> idElements;
                 boost::split( idElements, attr, boost::is_any_of("|"), boost::token_compress_on );
+                size_t pos = idElements[0].find("cds");
+                if (pos != std::string::npos) {
+                    gff->SetCdsid(idElements[0].substr(pos+4));
+                }
                 
-                gff->SetId(idElements[0]);
+                gff->SetId(val);
             }
             else if (key->compare("Name") == 0) {
                 gff->SetName(val);
@@ -180,14 +214,22 @@ public:
 
     }
     
-    static void loadGFF(const string& path, vector< shared_ptr<GFF> >& gffs) {
+    static void load(const string& path, vector< shared_ptr<GFF> >& gffs) {
     
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        cout << " - Loading GFF: " << path << endl;
+        
         std::ifstream file(path.c_str());
         std::string line; 
         while (std::getline(file, line)) {            
-            gffs.push_back(parse(line));
+            boost::trim(line);
+            if (!line.empty()) {
+                gffs.push_back(parse(line));
+            }
         }
         file.close();
+        
+        cout << " - Found " << gffs.size() << " GFF records." << endl;
     }
     
     
