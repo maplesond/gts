@@ -12,7 +12,7 @@
 //  GNU General Public License for more details.
 //
 //  You should have received a copy of the GNU General Public License
-//  along with Portculis.  If not, see <http://www.gnu.org/licenses/>.
+//  along with GTS.  If not, see <http://www.gnu.org/licenses/>.
 //  *******************************************************************
 
 #pragma once
@@ -40,6 +40,7 @@ enum GffType {
     UTR5,
     UTR3,
     CDS,
+    TRANSCRIPT,
     OTHER
 };
 
@@ -57,6 +58,9 @@ static GffType gffTypeFromString(string& s) {
     else if (s.compare("CDS") == 0) {
         return CDS;
     }
+    else if (s.compare("TRANSCRIPT") == 0) {
+        return TRANSCRIPT;
+    }
     else {
         return OTHER;
     }
@@ -66,10 +70,14 @@ class GFF {
     
 private:
     
+    string target;
+    string tool;
+    
     GffType type;
     int32_t start;
     int32_t end;
     
+    char strand;
     
     string id;
     string cdsid;
@@ -84,6 +92,31 @@ public:
     }
 
     virtual ~GFF() {}
+    
+    char GetStrand() const {
+        return strand;
+    }
+
+    void SetStrand(char strand) {
+        this->strand = strand;
+    }
+
+    string GetTarget() const {
+        return target;
+    }
+
+    void SetTarget(string target) {
+        this->target = target;
+    }
+
+    string GetTool() const {
+        return tool;
+    }
+
+    void SetTool(string tool) {
+        this->tool = tool;
+    }
+
     
     double GetCoverage() const {
         return coverage;
@@ -158,7 +191,26 @@ public:
         this->start = start;
     }
 
-
+    void write(std::ostream& out) {
+        
+        std::stringstream ss;
+        ss << "ID=" << id << ";";
+        
+        if (!parent.empty()) {
+            ss << "Parent=" << parent << ";";
+        }
+        
+        out << target << "\t" 
+            << tool << "\t"
+            << type << "\t"
+            << start << "\t"
+            << end << "\t"
+            << "." << "\t"
+            << strand << "\t"
+            << "." << "\t"
+            << ss.str() << endl;
+    }
+    
     
     static shared_ptr<GFF> parse(const string& line) {
         vector<string> parts;
@@ -171,10 +223,13 @@ public:
         
         shared_ptr<GFF> gff = shared_ptr<GFF>(new GFF());
         
+        gff->SetTarget(parts[0]);
+        gff->SetTool(parts[1]);
         gff->SetType(gffTypeFromString(parts[2]));
         gff->SetStart(lexical_cast<int32_t>(parts[3]));
         gff->SetEnd(lexical_cast<int32_t>(parts[4]));
-        
+        //gff->SetEnd(parts[5][0] == '.' ? -1 : lexical_cast<int32_t>(parts[5]));
+        gff->SetStrand(parts[6][0]);
         
         vector<string> attrParts;
         boost::split( attrParts, parts[8], boost::is_any_of(";"), boost::token_compress_on );
@@ -214,7 +269,11 @@ public:
 
     }
     
-    static void load(const string& path, vector< shared_ptr<GFF> >& gffs) {
+    
+    typedef std::vector< boost::shared_ptr<GFF> > GFFList;
+typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
+
+    static void load(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
     
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Loading GFF: " << path << endl;
@@ -232,7 +291,17 @@ public:
         cout << " - Found " << gffs.size() << " GFF records." << endl;
     }
     
-    
+    static void save(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
+        
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        cout << " - Saving GFF: " << path << endl;
+        
+        std::ofstream file(path.c_str());
+        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
+            gff->write(file);
+        }
+        file.close();
+    }
 };
 
 }

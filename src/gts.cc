@@ -12,7 +12,7 @@
 //  GNU General Public License for more details.
 //
 //  You should have received a copy of the GNU General Public License
-//  along with Portculis.  If not, see <http://www.gnu.org/licenses/>.
+//  along with GTS.  If not, see <http://www.gnu.org/licenses/>.
 //  *******************************************************************
 
 #ifdef HAVE_CONFIG_H
@@ -44,186 +44,64 @@ namespace bfs = boost::filesystem;
 
 #include "gff.hpp"
 #include "fln.hpp"
+#include "filters/transcript_filter.hpp"
+#include "filters/multiple_orf_filter.hpp"
+#include "filters/inconsistent_coords_filter.hpp"
+#include "filters/multiple_transcript_filter.hpp"
+#include "filters/strand_filter.hpp"
 
 namespace gts {
 
 typedef boost::error_info<struct GTSError,string> GTSErrorInfo;
 struct GTSException: virtual boost::exception, virtual std::exception { };
 
-typedef std::vector< boost::shared_ptr<GFF> > GFFList;
 typedef std::vector< boost::shared_ptr<DBAnnot> > FLNDBAnnotList;
 
-typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
-typedef boost::unordered_map<string, shared_ptr<DBAnnot> > DBAnnotIdMap;
-typedef boost::unordered_map<string, uint32_t> IdCounter;
-
-const int32_t POS_THRESHOLD = 10;
-const int32_t LONG_CDS_LEN_THRESHOLD = 200;
 
 class GTS {
     
 private:
     
+    
     GFFList genomicGffs;
     GFFList transdecoderCdsGffs;
+    GFFList cufflinksGtfs;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
-    GFFIdMap genomicGffMap;
     GFFIdMap uniqGffs;
     GFFIdMap uniqUtr;
     GFFIdMap uniqCds;
     GFFIdMap consistentCds;
-    DBAnnotIdMap uniqFlnCds;
-    DBAnnotIdMap uniqFlnNcCds;
+    
+    Maps maps;
+    GFFList filteredGffs;
     
     vector<string> uniqUtrFlnCds;
     vector<string> uniqUtrFln;
     vector<string> uniqUtrNc;
     vector<string> stage2Pass;
     
+    const string genomicGffFile;
+    const string transcriptGffFile;
+    const string flnDir;
     
+    string outputPrefix;
+    string cufflinksFile;
     double cds;
     bool include;
+    bool outputAllStages;
     bool verbose;
     
 protected:
     
-    void updateTDVFLN(const string& id, shared_ptr<GFF> tdc, shared_ptr<DBAnnot> fln, bool longCds) {
-        int32_t deltaStart = std::abs(tdc->GetStart() - fln->GetStart());
-        int32_t deltaEnd = std::abs(tdc->GetEnd() - fln->GetEnd());
-        int32_t tdcLen = tdc->GetEnd() - tdc->GetStart();
-
-        if (deltaStart <= POS_THRESHOLD && deltaEnd <= POS_THRESHOLD && 
-                (!longCds || (longCds && tdcLen >= LONG_CDS_LEN_THRESHOLD)) ) {
-
-            uniqUtrFlnCds.push_back(id);
-
-            const double seqFrac = (double)tdcLen / (double)fln->GetFastaLength();
-
-            if (seqFrac >= cds) {
-                consistentCds[id] = tdc;
-            }
-        }               
-    }
     
-    void filterInconsistent() {
-        
-        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
-        
-        cout << "Stage 2: Filter out CDS that are inconsistent between transdecoder and full lengther" << endl;
-        
-        BOOST_FOREACH(shared_ptr<GFF> gff, transdecoderCdsGffs) {
-        
-            if (gff->GetType() == CDS) {
-            
-                const string cdsid = gff->GetCdsid();
-                if (uniqUtr.count(cdsid)) {
-                    uniqCds[cdsid] = gff;
-                }
-            }
-        }
-        
-        // Index fln cdss by id
-        BOOST_FOREACH(shared_ptr<DBAnnot> db, flnDbannots) {
-            uniqFlnCds[db->GetId()] = db;
-        }
-        
-        // Index fln cdss by id
-        BOOST_FOREACH(shared_ptr<DBAnnot> db, flnNc) {
-            uniqFlnNcCds[db->GetId()] = db;
-            uniqFlnCds[db->GetId()] = db;
-        }
-        
-        BOOST_FOREACH(GFFIdMap::value_type i, uniqCds) {
-            
-            if (uniqFlnCds.count(i.first)) {
-                
-                shared_ptr<GFF> transdecoder = i.second;
-                
-                if (uniqFlnCds.count(i.first)) {
-                    
-                    shared_ptr<DBAnnot> fln = uniqFlnCds[i.first];
-                    
-                    if (fln->GetStatus() == COMPLETE) {                    
-                        updateTDVFLN(i.first, transdecoder, fln, false);
-                    }                
-                }
-                else if (include && uniqFlnNcCds.count(i.first)) {
-                    updateTDVFLN(i.first, transdecoder, uniqFlnNcCds[i.first], false);
-                }
-            }
-        }
-        
-        stage2Pass.reserve(uniqUtrFln.size() + uniqUtrNc.size());
-        stage2Pass.insert(stage2Pass.end(), uniqUtrFln.begin(), uniqUtrFln.end());
-        stage2Pass.insert(stage2Pass.end(), uniqUtrNc.begin(), uniqUtrNc.end());
-        
-        cout << " - # Transdecoder CDSs with IDs matching those from stage 1: " << uniqCds.size() << endl
-             << " - # Full lengther CDSs found in dbannotated.txt: " << flnDbannots.size() << endl
-             << " - # Full lengther CDSs found in new_coding.txt: " << flnNc.size() << endl
-             << " - # Total distinct full lengther CDSs: " << uniqFlnCds.size() << endl            
-             << " - # Transcripts with consistent fln and transdecoder CDS coordinates: " << uniqUtrFlnCds.size() << endl
-             << " - # Transcripts with similarity passing CDS coordinate check: " << uniqUtrFln.size() << endl
-             << " - # Transcripts with no similarity passing CDS coordinate check (will be 0 if --include wasn't used): " << uniqUtrNc.size() << endl
-             << " - # Transcripts passing filter 2 (CDS coordinate check): " << stage2Pass.size() << endl;
-                
-    }
     
-    void filterMultipleOrfs() {
-    
-        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+    void load() {
         
-        cout << "Stage 1: Filter out transcripts with multiple ORFs and no 5' and 3' UTRs" << endl;
-        IdCounter mrna;
-        IdCounter utr5;
-        IdCounter utr3;
-        vector<string> orfs;
+        auto_cpu_timer timer(1, "Total load time: %ws\n\n");
         
-        BOOST_FOREACH(shared_ptr<GFF> gff, genomicGffs) {
-
-            string id = gff->GetId();
-            
-            genomicGffMap[id] = gff;
-            
-            switch(gff->GetType()) {
-            case MRNA:
-                mrna[id]++;
-                orfs.push_back(id);
-                break;
-            case UTR5:
-                utr5[id]++;
-                break;
-            case UTR3:
-                utr3[id]++;
-                break;
-            }
-        }
-
-        vector<string> unique;
-        vector<string> uniqueUtr;
-        BOOST_FOREACH(IdCounter::value_type i, mrna) {
-            
-            if (i.second == 1) { 
-                uniqGffs[i.first] = genomicGffMap[i.first];
-                if (utr3[i.first] > 0 && utr5[i.first] > 0) {
-                    uniqUtr[i.first] = genomicGffMap[i.first];
-                }
-            }
-        }
-
-        cout << " - # ORFs: " << orfs.size() << endl
-             << " - # transcripts: " << mrna.size() << endl            
-             << " - # transcripts with one ORF: " << uniqGffs.size() << endl
-             << " - # transcripts with one ORF and both 5' and 3' UTRs: " << uniqUtr.size() << endl;
-
-    }
-    
-public :
-    
-    GTS(const string& genomicGffFile, const string& transcriptGffFile, const string& flnDir, double cds, bool include, bool verbose) :
-        cds(cds), include(include), verbose(verbose)
-    {
-        // Check for all required inputs
+        cout << "Loading inputs" << endl
+             << "--------------" << endl << endl;
         
         if (!bfs::exists(genomicGffFile) && ! bfs::symbolic_link_exists(genomicGffFile)) {
             BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
@@ -233,6 +111,13 @@ public :
         if (!bfs::exists(transcriptGffFile) && ! bfs::symbolic_link_exists(transcriptGffFile)) {
             BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
                     "Could not find specific transcript GFF file: ") + transcriptGffFile));
+        }
+        
+        if (!cufflinksFile.empty()) {
+            if (!bfs::exists(cufflinksFile) && ! bfs::symbolic_link_exists(cufflinksFile)) {
+                BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
+                        "Could not find specific cufflinks GTF file: ") + cufflinksFile));
+            }
         }
         
         if (!bfs::exists(flnDir) && ! bfs::symbolic_link_exists(flnDir)) {
@@ -250,50 +135,242 @@ public :
         if (!bfs::exists(ncFile)) {
             BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
                     "Could not find full lengther new_coding.txt file at: ") + ncFile));
-        }
-        
-        auto_cpu_timer timer(1, "Total load time: %ws\n\n");
-        
-        cout << "Loading inputs" << endl
-             << "--------------" << endl << endl;
+        }        
         
         cout << "Loading Genomic GFF file" << endl;
         GFF::load(genomicGffFile, genomicGffs);
-
+        
         cout << "Loading Transcript GFF file" << endl;
         GFF::load(transcriptGffFile, transdecoderCdsGffs);
-
+        
+        cout << "Loading Cufflinks GTF file" << endl;
+        GFF::load(cufflinksFile, cufflinksGtfs);
+        
         cout << "Loading Full Lengther DB Annot file" << endl;
         DBAnnot::load(dbAnnotFile, flnDbannots);
         
         cout << "Loading Full Lengther New Coding file" << endl;
         DBAnnot::load(ncFile, flnNc);
-        
-    }
 
-    virtual ~GTS() {}
+    }
     
-    void filter() {
+    void createMaps() {
         
-        auto_cpu_timer timer(1, "Total filter time: %ws\n\n");
+        auto_cpu_timer timer(1, "Total indexing time: %ws\n\n");
+        
+        cout << "Creating indices" << endl
+             << "----------------" << endl << endl;
+        
+        // Index genomic GFFs by Id
+        BOOST_FOREACH(shared_ptr<GFF> gff, genomicGffs) {
+            if (gff->GetType() == MRNA) {
+                maps.genomicGffMap[gff->GetId()] = gff;
+            }
+        }
+        
+        cout << "Indexed " << maps.genomicGffMap.size() << " mRNAs from genomic GFF file keyed to mRNA ID" << endl;
+        
+        // Index transdecoder CDSes
+        BOOST_FOREACH(shared_ptr<GFF> gff, transdecoderCdsGffs) {        
+            if (gff->GetType() == CDS) {            
+                maps.transdecoderCdsGffMap[gff->GetId()] = gff;
+            }
+        }
+        
+        cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to CDS ID" << endl;
+        
+        if (!cufflinksFile.empty()) {
+            // Index cufflinks transcripts
+            BOOST_FOREACH(shared_ptr<GFF> gff, cufflinksGtfs) {        
+                if (gff->GetType() == TRANSCRIPT) {            
+                    maps.cufflinksGtfMap[gff->GetId()] = gff;
+                }
+            }
+        
+            cout << "Indexed " << maps.cufflinksGtfMap.size() << " cufflinks transcripts" << endl;
+        }
+        
+        // Index fln cdss by id
+        BOOST_FOREACH(shared_ptr<DBAnnot> db, flnDbannots) {
+            if (db->GetStatus() == COMPLETE) {
+                maps.uniqFlnCds[db->GetId()] = db;
+            }
+        }
+        
+        cout << "Indexed " << maps.uniqFlnCds.size() << " complete and known transcripts from full lengther" << endl;
+        
+        // Index fln cdss by id
+        BOOST_FOREACH(shared_ptr<DBAnnot> db, flnNc) {
+            maps.uniqFlnNcCds[db->GetId()] = db;
+            //maps.uniqFlnCds[db->GetId()] = db;
+        }
+        
+        cout << "Indexed " << maps.uniqFlnNcCds.size() << " full lengther new transcripts" << endl;
+    }
+    
+    GFFList* filter() {
+        
+        auto_cpu_timer timer(1, "Total filtering time: %ws\n\n");
         
         cout << "Filtering transcripts" << endl
              << "---------------------" << endl << endl;
         
-        filterMultipleOrfs();
-        filterInconsistent();
+        std::vector<TranscriptFilter*> filters;
+        
+        filters.push_back(new MultipleOrfFilter());
+        filters.push_back(new InconsistentCoordsFilter(include, cds));
+        filters.push_back(new MultipleTranscriptFilter());
+        filters.push_back(new StrandFilter());
+                        
+        GFFList* in = &genomicGffs;
+        
+        std::vector< GFFList* > stages;
+        stages.push_back(in);
+        
+        for(int i = 0; i < filters.size(); i++) {
+            
+            cout << "Executing filter " << i+1 << " of " << filters.size() << endl
+                 << "Name: " << filters[i]->getName() << endl
+                 << "Description: " << filters[i]->getDescription() << endl
+                 << "Filter input contains " << in->size() << " GFF records" << endl;
+        
+            GFFList* out = new GFFList();
+            
+            // Do the filtering for this stage
+            filters[i]->filter(*in, maps, *out);            
+        
+            if (outputAllStages) {
+                std::stringstream ss;
+                ss << outputPrefix << ".stage." << i << ".gff3";
+                const string stageOut = ss.str();
+                gts::GFF::save(stageOut, *out);
+            }
+            
+            // Record how many entries have been filtered
+            size_t diff = in->size() - out->size();
+            
+            // Set next input to point to the current output
+            stages.push_back(out);
+            in = out;
+            
+            cout << "Report: " << endl
+                 << filters[i]->getReport() << endl;
+            
+            cout << "Filtered out " << diff << " GFF records" << endl
+                 << "Output contains " << out->size() << " GFF records" << endl 
+                 << "Filter " << i+1 << " of " << filters.size() << " completed" << endl << endl
+                 << "--------------------------------------" << endl << endl;            
+        }
+        
+        // Clean filters
+        BOOST_FOREACH(TranscriptFilter* filter, filters) {
+            delete filter;
+        }
+        
+        for(size_t i = 0; i < stages.size() - 1; i++) {
+            delete stages[i];
+        }
+        
+        // "in" contains the last filtered output
+        return in;
     }
     
-    void saveGB(const string& gbFile) {
-        
+    
+public :
+    
+    GTS(const string& genomicGffFile, const string& transcriptGffFile, const string& flnDir) :
+        genomicGffFile(genomicGffFile), transcriptGffFile(transcriptGffFile), flnDir(flnDir),
+                outputPrefix("gts_out"), cufflinksFile(""), cds(0.5), include(false), outputAllStages(false), verbose(false)
+    {
+    }
+    
+    string getOutputPrefix() const
+    {
+        return outputPrefix;
     }
 
+    void setOutputPrefix(string outputPrefix)
+    {
+        this->outputPrefix = outputPrefix;
+    }
+
+    string getCufflinksFile() const
+    {
+        return cufflinksFile;
+    }
+
+    void setCufflinksFile(string cufflinksFile)
+    {
+        this->cufflinksFile = cufflinksFile;
+    }
+
+        
+    double getCds() const
+    {
+        return cds;
+    }
+
+    void setCds(double cds)
+    {
+        this->cds = cds;
+    }
+
+    bool isInclude() const
+    {
+        return include;
+    }
+
+    void setInclude(bool include)
+    {
+        this->include = include;
+    }
+
+    bool isOutputAllStages() const
+    {
+        return outputAllStages;
+    }
+
+    void setOutputAllStages(bool outputAllStages)
+    {
+        this->outputAllStages = outputAllStages;
+    }
+
+    bool isVerbose() const
+    {
+        return verbose;
+    }
+
+    void setVerbose(bool verbose)
+    {
+        this->verbose = verbose;
+    }
+
+
+    virtual ~GTS() {}
+    
+    
+    void execute() {
+        
+        auto_cpu_timer timer(1, "Total execution time: %ws\n");
+        
+        // Load the input data
+        load();
+        
+        // Create maps to assist filters
+        createMaps();
+        
+        // Do the filtering
+        GFFList* filtered = filter();
+        
+        // Output consolidated GFFs
+        //output(filtered);
+        
+        delete filtered;
+    }
     
 };
 
 }
-
-
 
 
 string helpHeader() {
@@ -313,10 +390,12 @@ int main(int argc, char *argv[]) {
         // Portculis args
         string genomicGffFile;
         string transcriptGffFile;
+        string cufflinksFile;
         string flnResultsDir;
         string outputPrefix;
         bool include;
         double cds;
+        bool outputAllStages;
                 
         string cufflinksGtfFile;
         
@@ -331,14 +410,18 @@ int main(int argc, char *argv[]) {
                     "Gff file containing the genomic coordinates for the transcript features.")
                 ("tgff,t", po::value<string>(&transcriptGffFile),
                     "Gff file containing the transcript coordinates for the transcript features.")
+                ("cufflinks,c", po::value<string>(&cufflinksFile),
+                    "Gtf file containing cufflinks transcripts.")
                 ("fln_dir,f", po::value<string>(&flnResultsDir),
                     "Full lengther results directory, containing the \"dbannotated.txt\" and \"new_coding.txt\" files.")
                 ("output,o", po::value<string>(&outputPrefix)->default_value(string("gts_out")),
                     "The output prefix for all output files generated.")
-                ("include,i", po::bool_switch(&include)->default_value(false), 
+                ("include", po::bool_switch(&include)->default_value(false), 
                     "Include transcripts with no full lengther homology hit, providing it has a full lengther new_coding hit.")
-                ("cds,c", po::value<double>(&cds)->default_value(0.5), 
+                ("cds", po::value<double>(&cds)->default_value(0.5), 
                     "Min percentage length of CDS relative to mRNA for hits with homology.  0.0 -> 1.0")
+                ("all,a", po::bool_switch(&outputAllStages)->default_value(false), 
+                    "Whether or not to output GFF entries filtered at each stage.")
                 ("version", po::bool_switch(&version)->default_value(false), "Print version string")
                 ("help", po::bool_switch(&help)->default_value(false), "Produce help message")
                 ;
@@ -372,19 +455,16 @@ int main(int argc, char *argv[]) {
         }
         
         
-        
-        
-        const string gffPassOut = outputPrefix + ".pass.gff3";
-        const string gffFailOut = outputPrefix + ".pass.gff3";
-        
-        auto_cpu_timer timer(1, "Total wall time taken: %ws\n\n");
-                
         // Select good transcripts
-        gts::GTS gts(genomicGffFile, transcriptGffFile, flnResultsDir, cds, include, verbose);
-        gts.filter();
+        gts::GTS gts(genomicGffFile, transcriptGffFile, flnResultsDir);
+        gts.setOutputPrefix(outputPrefix);
+        gts.setCufflinksFile(cufflinksFile);
+        gts.setCds(cds);
+        gts.setInclude(include);
+        gts.setOutputAllStages(outputAllStages);
+        gts.setVerbose(verbose);
         
-        // Create GB from GFF objects (output only single transcript per locus)
-        gts.saveGB("out");
+        gts.execute();        
                 
     } catch (boost::exception &e) { 
         std::cerr << boost::diagnostic_information(e); 
