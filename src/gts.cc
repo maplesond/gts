@@ -177,12 +177,14 @@ protected:
                 }
             }
         
-            cout << "Indexed " << maps.gtfMap.size() << " cufflinks transcripts" << endl;
+            cout << "Indexed " << maps.gtfMap.size() << " distinct GTF transcripts" << endl;
         }
         
         // Index fln cdss by id
         BOOST_FOREACH(shared_ptr<DBAnnot> db, flnDbannots) {
+            
             maps.allDistinctFlnCds[db->GetId()] = db;
+                
             if (db->GetStatus() == COMPLETE) {
                 maps.uniqFlnCds[db->GetId()] = db;                
             }
@@ -227,8 +229,7 @@ protected:
                  << "Name: " << filters[i]->getName() << endl
                  << "Description: " << filters[i]->getDescription() << endl
                  << "Filter input contains " << in->size() << " GFF records" << endl;
-        
-            
+                    
             // Do the filtering for this stage
             filters[i]->filter(*in, maps, *out);            
         
@@ -254,7 +255,6 @@ protected:
             }
             
             cout << "--------------------------------------" << endl << endl;           
-            
             
         }
         
@@ -285,22 +285,16 @@ protected:
         
         cout << "--------------------------------------" << endl << endl
              << "Re-processing: " << genomicGffFile << endl
-             << "Splitting file based on transcripts that passed all the filters" << endl
-             << "Passed: " << passOut << endl
-             << "Failed: " << failOut << endl << endl;
+             << "Splitting file based on transcripts that passed all the filters" << endl << endl;
         
-        // Set the output source
-        setSourceForOutput(gffs, "gts");
-        
-        // Sort the output
-        std::sort(gffs.begin(), gffs.end(), GFFOrdering());        
-        
-        // Create list of failed transcripts
+        // Create map of passed transcripts
         GFFIdMap passed;
         BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
             passed[gff->GetRootId()] = gff;
         } 
         
+        uint32_t passCount = 0;
+        uint32_t failCount = 0;
         std::ifstream in(genomicGffFile.c_str());
         std::string line; 
         while (std::getline(in, line)) {            
@@ -312,9 +306,11 @@ protected:
                 
                 if (passed.count(gff->GetRootId()) > 0) {
                     gff->write(pass);
+                    passCount++;
                 }
                 else {
                     gff->write(fail);
+                    failCount++;
                 }
             }
         }
@@ -322,6 +318,11 @@ protected:
         
         pass.close();
         fail.close();
+        
+        uint32_t totalCount = passCount + failCount;
+        cout << "Processed " << totalCount << " GFF records" << endl
+             << "Sent " << passCount << " to " << passOut << endl
+             << "Sent " << failCount << " to " << failOut << endl << endl;
     }
     
 public :

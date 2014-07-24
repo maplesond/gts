@@ -390,57 +390,65 @@ public:
 
     void writeGFF3Attribs(std::ostream& out) {
         
-        out << "ID=" << id << ";";
+        vector<string> elems;
+        
+        elems.push_back(string("ID=") + id);
         
         if (!name.empty()) {
-            out << "Name=" << name << ";";
+            elems.push_back(string("Name=") + name);
         }
         
         if (!alias.empty()) {
-            out << "Alias=" << alias << ";";
+            elems.push_back(string("Alias=") + alias);
         }
         
         if (!parent.empty()) {
-            out << "Parent=" << parent << ";";
+            elems.push_back(string("Parent=") + parent);
         }
         
         if (!target.empty()) {
-            out << "Target=" << target << ";";
+            elems.push_back(string("Target=") + target);
         }
         
         if (!gap.empty()) {
-            out << "Gap=" << gap << ";";
-        }        
+            elems.push_back(string("Gap=") + gap);
+        }
+
+        out << boost::algorithm::join(elems, ";");        
     }
     
     void writeGTFAttribs(std::ostream& out) {
         
-        out << "gene_id \"" << geneId << "\";";
-        out << "transcript_id \"" << transcriptId << "\";";
+        vector<string> elems;
+        
+        elems.push_back(string("gene_id \"") + geneId + "\"");
+        elems.push_back(string("transcript_id \"") + transcriptId + "\"");
         
         if (exonNumber >= 0) {
-            out << "exon_number \"" << exonNumber << "\";";
+            elems.push_back(string("exon_number \"") + boost::lexical_cast<string>(exonNumber) + "\"");
         }
         
         if (fpkm >= 0) {
-            out << "FPKM \"" << fpkm << "\";";
+            elems.push_back(string("FPKM \"") + boost::lexical_cast<string>(fpkm) + "\"");
         }
         
         if (frac >= 0.0) {
-            out << "frac \"" << frac << "\";";
+            elems.push_back(string("frac \"") + boost::lexical_cast<string>(frac) + "\"");
         }
         
         if (confLo >= 0.0) {
-            out << "conf_lo \"" << confLo << "\";";
+            elems.push_back(string("conf_lo \"") + boost::lexical_cast<string>(confLo) + "\"");
         }
         
         if (confHigh >= 0.0) {
-            out << "conf_hi \"" << confHigh << "\";";
+            elems.push_back(string("conf_hi \"") + boost::lexical_cast<string>(confHigh) + "\"");
         }
         
         if (coverage >= 0.0) {
-            out << "cov \"" << coverage << "\";";
-        }        
+            elems.push_back(string("cov \"") + boost::lexical_cast<string>(coverage) + "\"");
+        }
+
+        out << boost::algorithm::join(elems, ";");
     }
 
     void write(std::ostream& out) {

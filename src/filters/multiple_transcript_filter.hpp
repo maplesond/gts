@@ -61,16 +61,15 @@ protected:
         
         BOOST_FOREACH(shared_ptr<GFF> gff, in) {
             
-            const string id = gff->GetRootId();
-            
+            const string id = gff->GetRootId();            
             const string geneId = geneList[id];
             
-            if (geneCdnaLen.count(geneId) == 0 || 
-                    (geneCdnaLen.count(geneId) > 0 && 
-                        maps.allDistinctFlnCds[id]->GetFastaLength() > geneCdnaLen[geneId])) {
+            if (maps.allDistinctFlnCds.count(id) > 0 &&
+                (geneCdnaLen.count(geneId) == 0 || 
+                (geneCdnaLen.count(geneId) > 0 && maps.allDistinctFlnCds[id]->GetFastaLength() > geneCdnaLen[geneId]))) {
                 
-                   maps.allDistinctFlnCds[id]->GetFastaLength();
-                   geneMap[geneId] = gff;
+                maps.allDistinctFlnCds[id]->GetFastaLength();
+                geneMap[geneId] = gff;
             }                
         }
         
