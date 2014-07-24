@@ -40,60 +40,26 @@ public:
     }
     
     string getDescription() {
-        return string("Filters out transcripts which have an inconsistent strand");
+        return string("Filters out genomic transcripts which have an inconsistent strand when compared to the GTF file");
     }
     
     
 protected:    
     
     void filterInternal(GFFList& in, Maps& maps, GFFList& out) {
-    /*    
-        my %strand_decoder;
-my @transcripts_pass_all;
-
-
-for (@gff_pass){
-    my @a = split;
-    my $id;
-    my $g;
-
-    if ($a[2] =~ m/mRNA/i) {
-    ($id) = $a[8] =~ /ID=(.*?)\|/;
-    $strand_decoder{$id} = $a[6];
-    }
-}
-
-foreach my $key (keys %strand_decoder) {
-
-if ($strand_decoder{$key} eq $strand_cuff{$key} || $strand_cuff{$key} eq '.') {
-
-push(@transcripts_pass_all,$key);
-
-}
-}
-
-for (@lines_gff){
-    my @a = split;
-    my $id;
-    if ($a[2] =~ m/gene|mRNA|exon|five_prime_UTR|three_prime_UTR/i) {
-    ($id) = $a[8] =~ /ID=(.*?)\|/;
-    }
-    if ($a[2] =~ m/CDS/i) {
-    ($id) = $a[8] =~ /ID=cds\.(.*?)\|/;
-    }
-
-    foreach my $b (@transcripts_pass_all) {
-    if ($b eq $id) {
-    my $c = join("\t", @a);
-    push (@gff_pass_all,$c);
-
-    }
-    }
-}
-
-my $size = @transcripts_pass_all;
-print OUTPUTFILELOG "#Transcripts passing filter 4 (final strand check) $size\n";
-*/
+        
+        BOOST_FOREACH(shared_ptr<GFF> gff, in) {
+            
+            if (gff->GetStrand() == maps.gtfMap[gff->GetRootId()]->GetStrand()) {
+                out.push_back(gff);
+            }
+        }
+        
+        stringstream ss;
+        
+        ss << " - # Transcripts with consistent strand: " << out.size() << endl;
+        
+        report = ss.str();
     }
     
 };

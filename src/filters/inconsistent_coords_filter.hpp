@@ -29,11 +29,11 @@ class InconsistentCoordsFilter : public TranscriptFilter {
      
 private:
     bool include;
-    double cds;
+    double cdsFrac;
     
 public:
     
-    InconsistentCoordsFilter(bool include, double cds) : TranscriptFilter(), include(include), cds(cds) {}
+    InconsistentCoordsFilter(bool include, double cds) : TranscriptFilter(), include(include), cdsFrac(cds) {}
     
     ~InconsistentCoordsFilter() {}
     
@@ -46,11 +46,11 @@ public:
     }
     
     double getCds() const {
-        return cds;
+        return cdsFrac;
     }
 
     void setCds(double cds) {
-        this->cds = cds;
+        this->cdsFrac = cds;
     }
 
     bool isInclude() const {
@@ -86,31 +86,48 @@ protected:
             }
         }
         
+        uint32_t matchingCdsFlnIds = 0;
         uint32_t flnCompleteConsistent = 0;
         uint32_t flnNewConsistent = 0;
+        uint32_t similarTranscripts = 0;
+        uint32_t notSimilarTranscripts = 0;
+        
         BOOST_FOREACH(GFFIdMap::value_type i, uniqCds) {
             
             const string id = i.second->GetSeqId();
             shared_ptr<GFF> gff = i.second;
+            int32_t tdcLen = gff->GetEnd() - gff->GetStart();
             
             bool consistent = false;
-            // If 
+            bool longEnough = false;
+            
             if (maps.uniqFlnCds.count(id)) {
-                consistent = isTDCAndFLNConsistent(id, gff, maps.uniqFlnCds[id], false);
+                matchingCdsFlnIds++;
+                consistent = isTDCAndFLNConsistent(gff, maps.uniqFlnCds[id], gts::POS_THRESHOLD, 2);
 
                 if (consistent) {
                     flnCompleteConsistent++;
+                    longEnough = isCDSLongEnough(tdcLen, maps.uniqFlnCds[id], cdsFrac);
+                    if (longEnough) {
+                        similarTranscripts++;
+                    }
                 }
-            }
+            }            
             else if (include && maps.uniqFlnNcCds.count(id)) {
-                consistent = isTDCAndFLNConsistent(id, gff, maps.uniqFlnNcCds[id], false);
+                matchingCdsFlnIds++;
+                consistent = isTDCAndFLNConsistent(gff, maps.uniqFlnNcCds[id], gts::POS_THRESHOLD, gts::POS_THRESHOLD) &&
+                        tdcLen >= gts::LONG_CDS_LEN_THRESHOLD;
                 
                 if (consistent) {
-                    flnNewConsistent++;
+                    flnCompleteConsistent++;
+                    longEnough = isCDSLongEnough(tdcLen, maps.uniqFlnNcCds[id], 0.5);
+                    if (longEnough) {
+                        notSimilarTranscripts++;
+                    }
                 }
             }
             
-            if (consistent) {
+            if (consistent && longEnough) {
                 out.push_back(uniqueTranscripts[i.second->GetSeqId()]);
             }
         }
@@ -118,31 +135,32 @@ protected:
         stringstream ss;
         
         ss << " - Including consistent full lengther new coding hits: " << std::boolalpha << include << endl
-           << " - Min required ratio of transdecoder to full lengther length: " << cds << endl
+           << " - Min required ratio of transdecoder to full lengther length: " << cdsFrac << endl
            << " - # Transdecoder CDSs with IDs matching those from input transcripts: " << uniqCds.size() << endl
-           << " - # Transcripts with consistent and complete Full lengther annotations: " << flnCompleteConsistent << endl
-           << " - # Transcripts with no complete full lengther annotation but with new coding entry (will be 0 if --include wasn't used): " << flnNewConsistent << endl;           
+           << " - # Transdecoder CDSs with IDs matching Full Lengther transcripts: " << matchingCdsFlnIds << endl
+           << " - # Transcripts with consistent transdecoder CDS and Full Lengther coordinates: " << flnCompleteConsistent << endl
+           << " - # Consistent and long transcripts with similarity to Complete Full Lengther transcripts: " << similarTranscripts << endl           
+           << " - # Consistent and long transcripts with no similarity (will be 0 if --include wasn't used): " << notSimilarTranscripts << endl;           
        
         report = ss.str();
     }
 
-    bool isTDCAndFLNConsistent(const string& id, shared_ptr<GFF> tdc, shared_ptr<DBAnnot> fln, bool longCds) {
-        int32_t deltaStart = std::abs(tdc->GetStart() - fln->GetStart());
-        int32_t deltaEnd = std::abs(tdc->GetEnd() - fln->GetEnd());
-        int32_t tdcLen = tdc->GetEnd() - tdc->GetStart();
-
-        if (deltaStart <= gts::POS_THRESHOLD && deltaEnd <= gts::POS_THRESHOLD && 
-                (!longCds || (longCds && tdcLen >= gts::LONG_CDS_LEN_THRESHOLD)) ) {
-
-            const double seqFrac = (double)tdcLen / (double)fln->GetFastaLength();
-
-            if (seqFrac >= cds) {
-                return true;
-            }
-        }
+    bool isTDCAndFLNConsistent(shared_ptr<GFF> cds, shared_ptr<DBAnnot> fln, int32_t startThreshold, int32_t endThreshold) {
         
-        return false;
-    }    
+        int32_t deltaStart = std::abs(cds->GetStart() - fln->GetOrfStart());
+        int32_t deltaEnd = std::abs(cds->GetEnd() - fln->GetOrfEnd());        
+
+        return deltaStart <= startThreshold && deltaEnd <= endThreshold;
+    }
+
+    bool isCDSLongEnough(int32_t cdsLen, shared_ptr<DBAnnot> fln, double threshold) {
+        
+        const double seqFrac = (double)cdsLen / (double)fln->GetFastaLength();
+
+        if (seqFrac >= threshold) {
+            return true;
+        }
+    }
 };
 
 }

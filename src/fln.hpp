@@ -53,31 +53,31 @@ enum FLNStatus {
 
 static FLNStatus flnStatusFromString(string& s) {
     
-    if (s.compare("Internal") == 0) {
+    if (boost::iequals(s, "Internal")) {
         return INTERNAL;
     }
-    else if (s.compare("Complete") == 0) {
+    else if (boost::iequals(s, "Complete")) {
         return COMPLETE;
     }
-    else if (s.compare("C-terminus") == 0) {
+    else if (boost::iequals(s, "C-terminus")) {
         return CTERM;
     }
-    else if (s.compare("N-terminus") == 0) {
+    else if (boost::iequals(s, "N-terminus")) {
         return NTERM;
     }
-    else if (s.compare("Putative C-terminus") == 0) {
+    else if (boost::iequals(s, "Putative C-terminus")) {
         return NTERM;
     }
-    else if (s.compare("Misassembled") == 0) {
+    else if (boost::iequals(s, "Misassembled")) {
         return MISASSEMBLED;
     }
-    else if (s.compare("coding") == 0) {
+    else if (boost::iequals(s, "coding")) {
         return CODING;
     }
-    else if (s.compare("putative_coding") == 0) {
+    else if (boost::iequals(s, "putative_coding")) {
         return PUTATIVE_CODING;
     }
-    else if (s.compare("unknown") == 0) {
+    else if (boost::iequals(s, "unknown")) {
         return UNKNOWN;
     }
     else {
@@ -90,20 +90,22 @@ private:
     string id;
     int32_t fastaLength;
     FLNStatus status;
-    int32_t start;
-    int32_t end;
+    int32_t orfStart;
+    int32_t orfEnd;
+    int32_t sStart;
+    int32_t sEnd;
     
 public:
-    DBAnnot() : id(""), fastaLength(0), status(DB_OTHER), start(-1), end(-1) {};
+    DBAnnot() : id(""), fastaLength(0), status(DB_OTHER), orfStart(-1), orfEnd(-1), sStart(-1), sEnd(-1) {};
     
     virtual ~DBAnnot() {};
     
-    int32_t GetEnd() const {
-        return end;
+    int32_t GetOrfEnd() const {
+        return orfEnd;
     }
 
-    void SetEnd(int32_t end) {
-        this->end = end;
+    void SetOrfEnd(int32_t end) {
+        this->orfEnd = end;
     }
 
     int32_t GetFastaLength() const {
@@ -122,12 +124,12 @@ public:
         this->id = id;
     }
 
-    int32_t GetStart() const {
-        return start;
+    int32_t GetOrfStart() const {
+        return orfStart;
     }
 
-    void SetStart(int32_t start) {
-        this->start = start;
+    void SetOrfStart(int32_t start) {
+        this->orfStart = start;
     }
 
     FLNStatus GetStatus() const {
@@ -137,13 +139,30 @@ public:
     void SetStatus(FLNStatus status) {
         this->status = status;
     }
+    
+        int32_t GetSEnd() const {
+            return sEnd;
+        }
+
+        void SetSEnd(int32_t sEnd) {
+            this->sEnd = sEnd;
+        }
+
+        int32_t GetSStart() const {
+            return sStart;
+        }
+
+        void SetSStart(int32_t sStart) {
+            this->sStart = sStart;
+        }
+
 
     
     static shared_ptr<DBAnnot> parse(const string& line) {
         vector<string> parts;
-        boost::split( parts, line, boost::is_any_of("\t"), boost::token_compress_on );
+        boost::split( parts, line, boost::is_any_of("\t"), boost::token_compress_off );
 
-        if (parts.size() < 8 || parts.size() > 17) {
+        if (parts.size() < 8 || parts.size() > 18) {
             BOOST_THROW_EXCEPTION(FLNException() << FLNErrorInfo(string(
                 "Could not parse GFF line due to incorrect number of columns. Expected at least 8 columns.  Found ") + 
                     lexical_cast<string>(parts.size()) + " columns.  Line: " + line));
@@ -156,11 +175,19 @@ public:
         db->SetStatus(flnStatusFromString(parts[4]));
         
         if (db->GetStatus() != MISASSEMBLED && parts.size() >= 14) {
-            int32_t s = parts[12].empty() ? -1 : lexical_cast<int32_t>(parts[12]);
-            int32_t e = parts[13].empty() ? -1 : lexical_cast<int32_t>(parts[13]);
+            int32_t os = parts[12].empty() ? -1 : lexical_cast<int32_t>(parts[12]);
+            int32_t oe = parts[13].empty() ? -1 : lexical_cast<int32_t>(parts[13]);
 
-            db->SetStart(s < e ? s : e);
-            db->SetEnd(s < e ? e : s);
+            db->SetOrfStart(os < oe ? os : oe);
+            db->SetOrfEnd(os < oe ? oe : os);
+            
+            if (parts.size() >= 16) {
+                int32_t ss = parts[14].empty() ? -1 : lexical_cast<int32_t>(parts[14]);
+                int32_t se = parts[15].empty() ? -1 : lexical_cast<int32_t>(parts[15]);
+
+                db->SetSStart(ss < se ? ss : se);
+                db->SetSEnd(ss < se ? se : ss);
+            }
         }
                   
         return db;

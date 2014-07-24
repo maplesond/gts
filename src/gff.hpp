@@ -269,6 +269,10 @@ public:
     void SetEnd(int32_t end) {
         this->end = end;
     }
+    
+    int32_t GetLength() const {
+        return std::abs(end - start);
+    }
 
     int32_t GetStart() const {
         return start;
@@ -328,6 +332,15 @@ public:
 
     string GetTranscriptId() const {
         return transcriptId;
+    }
+    
+    string GetRootTranscriptId() const {
+        vector<string> idElements;
+        boost::split( idElements, transcriptId, boost::is_any_of("|"), boost::token_compress_on );
+        
+        return idElements.size() == 1 ? idElements[0] :
+                    idElements.size() == 2 ? idElements[1] :
+                        "";
     }
 
     void SetTranscriptId(string transcriptId) {
@@ -583,6 +596,25 @@ public:
             gff->write(file);
         }
         file.close();
+    }
+};
+
+struct GFFOrdering {
+    inline bool operator ()(const shared_ptr<GFF>& a, const shared_ptr<GFF>& b) {
+        
+        int seqId = a->GetSeqId().compare(b->GetSeqId());
+        if (seqId != 0) {
+            return seqId < 0;            
+        }
+        else {
+            int sDiff = a->GetStart() - b->GetStart();
+            if (sDiff != 0) {
+                return a->GetStart() < b->GetStart();
+            }
+            else {
+                return a->GetEnd() < b->GetEnd();
+            }
+        }        
     }
 };
 

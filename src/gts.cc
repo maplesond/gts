@@ -65,28 +65,18 @@ private:
     
     shared_ptr<GFFList> genomicGffs;
     GFFList transdecoderCdsGffs;
-    GFFList cufflinksGtfs;
+    GFFList gtfs;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
-    GFFIdMap uniqGffs;
-    GFFIdMap uniqUtr;
-    GFFIdMap uniqCds;
-    GFFIdMap consistentCds;
     
     Maps maps;
-    GFFList filteredGffs;
-    
-    vector<string> uniqUtrFlnCds;
-    vector<string> uniqUtrFln;
-    vector<string> uniqUtrNc;
-    vector<string> stage2Pass;
     
     const string genomicGffFile;
     const string transcriptGffFile;
     const string flnDir;
     
     string outputPrefix;
-    string cufflinksFile;
+    string gtfsFile;
     double cds;
     bool include;
     bool outputAllStages;
@@ -113,10 +103,10 @@ protected:
                     "Could not find specific transcript GFF file: ") + transcriptGffFile));
         }
         
-        if (!cufflinksFile.empty()) {
-            if (!bfs::exists(cufflinksFile) && ! bfs::symbolic_link_exists(cufflinksFile)) {
+        if (!gtfsFile.empty()) {
+            if (!bfs::exists(gtfsFile) && ! bfs::symbolic_link_exists(gtfsFile)) {
                 BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
-                        "Could not find specific cufflinks GTF file: ") + cufflinksFile));
+                        "Could not find specific GTF file: ") + gtfsFile));
             }
         }
         
@@ -144,7 +134,7 @@ protected:
         GFF::load(GFF3, transcriptGffFile, transdecoderCdsGffs);
         
         cout << "Loading Cufflinks GTF file" << endl;
-        GFF::load(GTF, cufflinksFile, cufflinksGtfs);
+        GFF::load(GTF, gtfsFile, gtfs);
         
         cout << "Loading Full Lengther DB Annot file" << endl;
         DBAnnot::load(dbAnnotFile, flnDbannots);
@@ -179,21 +169,22 @@ protected:
         
         cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Root ID" << endl;
         
-        if (!cufflinksFile.empty()) {
+        if (!gtfsFile.empty()) {
             // Index cufflinks transcripts
-            BOOST_FOREACH(shared_ptr<GFF> gff, cufflinksGtfs) {        
+            BOOST_FOREACH(shared_ptr<GFF> gff, gtfs) {        
                 if (gff->GetType() == TRANSCRIPT) {            
-                    maps.cufflinksGtfMap[gff->GetRootId()] = gff;
+                    maps.gtfMap[gff->GetRootTranscriptId()] = gff;
                 }
             }
         
-            cout << "Indexed " << maps.cufflinksGtfMap.size() << " cufflinks transcripts" << endl;
+            cout << "Indexed " << maps.gtfMap.size() << " cufflinks transcripts" << endl;
         }
         
         // Index fln cdss by id
         BOOST_FOREACH(shared_ptr<DBAnnot> db, flnDbannots) {
+            maps.allDistinctFlnCds[db->GetId()] = db;
             if (db->GetStatus() == COMPLETE) {
-                maps.uniqFlnCds[db->GetId()] = db;
+                maps.uniqFlnCds[db->GetId()] = db;                
             }
         }
         
@@ -202,10 +193,12 @@ protected:
         // Index fln cdss by id
         BOOST_FOREACH(shared_ptr<DBAnnot> db, flnNc) {
             maps.uniqFlnNcCds[db->GetId()] = db;
-            //maps.uniqFlnCds[db->GetId()] = db;
+            maps.allDistinctFlnCds[db->GetId()] = db;
         }
         
-        cout << "Indexed " << maps.uniqFlnNcCds.size() << " full lengther new transcripts" << endl;
+        cout << "Indexed " << maps.uniqFlnNcCds.size() << " full lengther new coding transcripts" << endl;
+                
+        cout << "Indexed " << maps.allDistinctFlnCds.size() << " total full lengther transcripts" << endl;
     }
     
     void filter(std::vector< shared_ptr<GFFList> >& stages) {
@@ -274,11 +267,68 @@ protected:
         }
     }
     
+    void output(GFFList& gffs) {        
+        
+        auto_cpu_timer timer(1, "Total writing time: %ws\n\n");
+        
+        // Save passed output
+        std::stringstream ssp;
+        ssp << outputPrefix << ".pass.gff3";
+        const string passOut = ssp.str(); 
+        std::ofstream pass(passOut.c_str());
+        
+        // Save passed output
+        std::stringstream ssf;
+        ssf << outputPrefix << ".fail.gff3";
+        const string failOut = ssf.str();        
+        std::ofstream fail(failOut.c_str());
+        
+        cout << "--------------------------------------" << endl << endl
+             << "Re-processing: " << genomicGffFile << endl
+             << "Splitting file based on transcripts that passed all the filters" << endl
+             << "Passed: " << passOut << endl
+             << "Failed: " << failOut << endl << endl;
+        
+        // Set the output source
+        setSourceForOutput(gffs, "gts");
+        
+        // Sort the output
+        std::sort(gffs.begin(), gffs.end(), GFFOrdering());        
+        
+        // Create list of failed transcripts
+        GFFIdMap passed;
+        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
+            passed[gff->GetRootId()] = gff;
+        } 
+        
+        std::ifstream in(genomicGffFile.c_str());
+        std::string line; 
+        while (std::getline(in, line)) {            
+            boost::trim(line);
+            if (!line.empty()) {
+                shared_ptr<GFF> gff = GFF::parse(GFF3, line);
+                
+                gff->SetSource("gts");
+                
+                if (passed.count(gff->GetRootId()) > 0) {
+                    gff->write(pass);
+                }
+                else {
+                    gff->write(fail);
+                }
+            }
+        }
+        in.close();        
+        
+        pass.close();
+        fail.close();
+    }
+    
 public :
     
     GTS(const string& genomicGffFile, const string& transcriptGffFile, const string& flnDir) :
         genomicGffFile(genomicGffFile), transcriptGffFile(transcriptGffFile), flnDir(flnDir),
-                outputPrefix("gts_out"), cufflinksFile(""), cds(0.5), include(false), outputAllStages(false), verbose(false)
+                outputPrefix("gts_out"), gtfsFile(""), cds(0.5), include(false), outputAllStages(false), verbose(false)
     {
         genomicGffs = shared_ptr<GFFList>(new GFFList());
     }
@@ -293,14 +343,14 @@ public :
         this->outputPrefix = outputPrefix;
     }
 
-    string getCufflinksFile() const
+    string getGTFFile() const
     {
-        return cufflinksFile;
+        return gtfsFile;
     }
 
-    void setCufflinksFile(string cufflinksFile)
+    void setGTFFile(string gtfFile)
     {
-        this->cufflinksFile = cufflinksFile;
+        this->gtfsFile = gtfFile;
     }
 
         
@@ -363,8 +413,9 @@ public :
         filter(stages);
         
         // Output consolidated GFFs
-        //output(filtered);
-        int i=90;        
+        output(*(stages[stages.size() - 1]));
+        
+        cout << "--------------------------------------" << endl << endl;  
     }
     
 };
@@ -389,7 +440,7 @@ int main(int argc, char *argv[]) {
         // Portculis args
         string genomicGffFile;
         string transcriptGffFile;
-        string cufflinksFile;
+        string gtfsFile;
         string flnResultsDir;
         string outputPrefix;
         bool include;
@@ -406,11 +457,11 @@ int main(int argc, char *argv[]) {
         po::options_description generic_options(helpHeader());
         generic_options.add_options()
                 ("ggff,g", po::value<string>(&genomicGffFile), 
-                    "Gff file containing the genomic coordinates for the transcript features.")
+                    "GFF3 file containing the genomic coordinates for the transcript features.")
                 ("tgff,t", po::value<string>(&transcriptGffFile),
-                    "Gff file containing the transcript coordinates for the transcript features.")
-                ("cufflinks,c", po::value<string>(&cufflinksFile),
-                    "Gtf file containing cufflinks transcripts.")
+                    "GFF3 file containing the transcript coordinates for the transcript features.")
+                ("gtf", po::value<string>(&gtfsFile),
+                    "GTF file containing transcripts.")
                 ("fln_dir,f", po::value<string>(&flnResultsDir),
                     "Full lengther results directory, containing the \"dbannotated.txt\" and \"new_coding.txt\" files.")
                 ("output,o", po::value<string>(&outputPrefix)->default_value(string("gts_out")),
@@ -457,7 +508,7 @@ int main(int argc, char *argv[]) {
         // Select good transcripts
         gts::GTS gts(genomicGffFile, transcriptGffFile, flnResultsDir);
         gts.setOutputPrefix(outputPrefix);
-        gts.setCufflinksFile(cufflinksFile);
+        gts.setGTFFile(gtfsFile);
         gts.setCds(cds);
         gts.setInclude(include);
         gts.setOutputAllStages(outputAllStages);
