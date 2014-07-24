@@ -24,6 +24,10 @@ After GTS has been installed, the `gts` executable should be available.
 
 Typing `gts` or `gts --help` at the command line will present you with the GTS help message.
 
+## Dependencies
+
+Uses Boost.  Developed with Boost V1.52.  Please make sure this is properly installed
+and configured before compiling or running GTS.
 
 
 ##Licensing:
