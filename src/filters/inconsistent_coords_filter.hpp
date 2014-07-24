@@ -75,13 +75,13 @@ protected:
         // Create a map of the input transcripts
         GFFIdMap uniqueTranscripts;            
         BOOST_FOREACH(shared_ptr<GFF> gff, in) {
-           uniqueTranscripts[gff->GetId()] = gff;
+           uniqueTranscripts[gff->GetRootId()] = gff;
         }
         
         // Create a map of transdecoder CDSes that are also found in the input transcripts
         GFFIdMap uniqCds;
         BOOST_FOREACH(GFFIdMap::value_type i, maps.transdecoderCdsGffMap) {        
-            if (uniqueTranscripts.count(i.second->GetParent())) {
+            if (uniqueTranscripts.count(i.second->GetSeqId())) {
                 uniqCds[i.first] = i.second;
             }
         }
@@ -90,20 +90,20 @@ protected:
         uint32_t flnNewConsistent = 0;
         BOOST_FOREACH(GFFIdMap::value_type i, uniqCds) {
             
-            const string id = i.second->GetTarget();
-            shared_ptr<GFF> transdecoder = i.second;
+            const string id = i.second->GetSeqId();
+            shared_ptr<GFF> gff = i.second;
             
             bool consistent = false;
             // If 
             if (maps.uniqFlnCds.count(id)) {
-                consistent = isTDCAndFLNConsistent(id, transdecoder, maps.uniqFlnCds[id], false);
+                consistent = isTDCAndFLNConsistent(id, gff, maps.uniqFlnCds[id], false);
 
                 if (consistent) {
                     flnCompleteConsistent++;
                 }
             }
             else if (include && maps.uniqFlnNcCds.count(id)) {
-                consistent = isTDCAndFLNConsistent(id, transdecoder, maps.uniqFlnNcCds[id], false);
+                consistent = isTDCAndFLNConsistent(id, gff, maps.uniqFlnNcCds[id], false);
                 
                 if (consistent) {
                     flnNewConsistent++;
@@ -111,7 +111,7 @@ protected:
             }
             
             if (consistent) {
-                out.push_back(i.second);
+                out.push_back(uniqueTranscripts[i.second->GetSeqId()]);
             }
         }
         

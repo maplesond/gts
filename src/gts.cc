@@ -63,7 +63,7 @@ class GTS {
 private:
     
     
-    GFFList genomicGffs;
+    shared_ptr<GFFList> genomicGffs;
     GFFList transdecoderCdsGffs;
     GFFList cufflinksGtfs;
     FLNDBAnnotList flnDbannots;
@@ -138,13 +138,13 @@ protected:
         }        
         
         cout << "Loading Genomic GFF file" << endl;
-        GFF::load(genomicGffFile, genomicGffs);
+        GFF::load(GFF3, genomicGffFile, *genomicGffs);
         
         cout << "Loading Transcript GFF file" << endl;
-        GFF::load(transcriptGffFile, transdecoderCdsGffs);
+        GFF::load(GFF3, transcriptGffFile, transdecoderCdsGffs);
         
         cout << "Loading Cufflinks GTF file" << endl;
-        GFF::load(cufflinksFile, cufflinksGtfs);
+        GFF::load(GTF, cufflinksFile, cufflinksGtfs);
         
         cout << "Loading Full Lengther DB Annot file" << endl;
         DBAnnot::load(dbAnnotFile, flnDbannots);
@@ -162,28 +162,28 @@ protected:
              << "----------------" << endl << endl;
         
         // Index genomic GFFs by Id
-        BOOST_FOREACH(shared_ptr<GFF> gff, genomicGffs) {
+        BOOST_FOREACH(shared_ptr<GFF> gff, *genomicGffs) {
             if (gff->GetType() == MRNA) {
-                maps.genomicGffMap[gff->GetId()] = gff;
+                maps.genomicGffMap[gff->GetRootId()] = gff;
             }
         }
         
-        cout << "Indexed " << maps.genomicGffMap.size() << " mRNAs from genomic GFF file keyed to mRNA ID" << endl;
+        cout << "Indexed " << maps.genomicGffMap.size() << " mRNAs from genomic GFF file keyed to Root ID" << endl;
         
         // Index transdecoder CDSes
         BOOST_FOREACH(shared_ptr<GFF> gff, transdecoderCdsGffs) {        
             if (gff->GetType() == CDS) {            
-                maps.transdecoderCdsGffMap[gff->GetId()] = gff;
+                maps.transdecoderCdsGffMap[gff->GetSeqId()] = gff;
             }
         }
         
-        cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to CDS ID" << endl;
+        cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Root ID" << endl;
         
         if (!cufflinksFile.empty()) {
             // Index cufflinks transcripts
             BOOST_FOREACH(shared_ptr<GFF> gff, cufflinksGtfs) {        
                 if (gff->GetType() == TRANSCRIPT) {            
-                    maps.cufflinksGtfMap[gff->GetId()] = gff;
+                    maps.cufflinksGtfMap[gff->GetRootId()] = gff;
                 }
             }
         
@@ -208,73 +208,71 @@ protected:
         cout << "Indexed " << maps.uniqFlnNcCds.size() << " full lengther new transcripts" << endl;
     }
     
-    GFFList* filter() {
+    void filter(std::vector< shared_ptr<GFFList> >& stages) {
         
         auto_cpu_timer timer(1, "Total filtering time: %ws\n\n");
         
         cout << "Filtering transcripts" << endl
              << "---------------------" << endl << endl;
         
-        std::vector<TranscriptFilter*> filters;
+        std::vector< shared_ptr<TranscriptFilter> > filters;
         
-        filters.push_back(new MultipleOrfFilter());
-        filters.push_back(new InconsistentCoordsFilter(include, cds));
-        filters.push_back(new MultipleTranscriptFilter());
-        filters.push_back(new StrandFilter());
+        filters.push_back(shared_ptr<TranscriptFilter>(new MultipleOrfFilter()));
+        filters.push_back(shared_ptr<TranscriptFilter>(new InconsistentCoordsFilter(include, cds)));
+        filters.push_back(shared_ptr<TranscriptFilter>(new MultipleTranscriptFilter()));
+        filters.push_back(shared_ptr<TranscriptFilter>(new StrandFilter()));
                         
-        GFFList* in = &genomicGffs;
-        
-        std::vector< GFFList* > stages;
-        stages.push_back(in);
+        stages.push_back(genomicGffs);
         
         for(int i = 0; i < filters.size(); i++) {
+            
+            stages.push_back(shared_ptr<GFFList>(new GFFList()));
+            shared_ptr<GFFList> in = stages[i];
+            shared_ptr<GFFList> out = stages[i+1];
             
             cout << "Executing filter " << i+1 << " of " << filters.size() << endl
                  << "Name: " << filters[i]->getName() << endl
                  << "Description: " << filters[i]->getDescription() << endl
                  << "Filter input contains " << in->size() << " GFF records" << endl;
         
-            GFFList* out = new GFFList();
             
             // Do the filtering for this stage
             filters[i]->filter(*in, maps, *out);            
         
-            if (outputAllStages) {
-                std::stringstream ss;
-                ss << outputPrefix << ".stage." << i << ".gff3";
-                const string stageOut = ss.str();
-                gts::GFF::save(stageOut, *out);
-            }
-            
             // Record how many entries have been filtered
             size_t diff = in->size() - out->size();
-            
-            // Set next input to point to the current output
-            stages.push_back(out);
-            in = out;
             
             cout << "Report: " << endl
                  << filters[i]->getReport() << endl;
             
             cout << "Filtered out " << diff << " GFF records" << endl
                  << "Output contains " << out->size() << " GFF records" << endl 
-                 << "Filter " << i+1 << " of " << filters.size() << " completed" << endl << endl
-                 << "--------------------------------------" << endl << endl;            
+                 << "Filter " << i+1 << " of " << filters.size() << " completed" << endl << endl;
+            
+            // Output filtered GFF for this stage if requested
+            if (outputAllStages) {
+                
+                setSourceForOutput(*out, "gts");
+                
+                std::stringstream ss;
+                ss << outputPrefix << ".stage." << (i+1) << ".gff3";
+                const string stageOut = ss.str();
+                gts::GFF::save(stageOut, *out);
+            }
+            
+            cout << "--------------------------------------" << endl << endl;           
+            
+            
         }
         
-        // Clean filters
-        BOOST_FOREACH(TranscriptFilter* filter, filters) {
-            delete filter;
-        }
-        
-        for(size_t i = 0; i < stages.size() - 1; i++) {
-            delete stages[i];
-        }
-        
-        // "in" contains the last filtered output
-        return in;
     }
     
+    void setSourceForOutput(GFFList& gffs, string source) {
+        
+        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
+            gff->SetSource(source);
+        }
+    }
     
 public :
     
@@ -282,6 +280,7 @@ public :
         genomicGffFile(genomicGffFile), transcriptGffFile(transcriptGffFile), flnDir(flnDir),
                 outputPrefix("gts_out"), cufflinksFile(""), cds(0.5), include(false), outputAllStages(false), verbose(false)
     {
+        genomicGffs = shared_ptr<GFFList>(new GFFList());
     }
     
     string getOutputPrefix() const
@@ -360,12 +359,12 @@ public :
         createMaps();
         
         // Do the filtering
-        GFFList* filtered = filter();
+        std::vector< shared_ptr<GFFList> > stages;
+        filter(stages);
         
         // Output consolidated GFFs
         //output(filtered);
-        
-        delete filtered;
+        int i=90;        
     }
     
 };

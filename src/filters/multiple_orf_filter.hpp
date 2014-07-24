@@ -56,14 +56,14 @@ protected:
 
             switch(gff->GetType()) {
             case MRNA:
-                mrna[gff->GetId()]++;
+                mrna[gff->GetRootId()]++;
                 orfs++;
                 break;
             case UTR5:
-                utr5[gff->GetParent()]++;
+                utr5[gff->GetRootId()]++;
                 break;
             case UTR3:
-                utr3[gff->GetParent()]++;
+                utr3[gff->GetRootId()]++;
                 break;
             }
         }

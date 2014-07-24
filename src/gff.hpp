@@ -35,63 +35,159 @@ namespace gts {
 typedef boost::error_info<struct GFFError,string> GFFErrorInfo;
 struct GFFException: virtual boost::exception, virtual std::exception { };
 
+enum FileFormat {
+    GFF2,
+    GFF3,
+    GTF
+};
+
+static FileFormat fileFormatFromString(string& s) {
+    
+    if (s.compare("GFF2") == 0) {
+        return GFF2;
+    }
+    else if (s.compare("GFF3") == 0) {
+        return GFF3;
+    }
+    else if (s.compare("GTF") == 0) {
+        return GTF;
+    }
+    else {
+        BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+            "Could not recognise GFF style file format: ") + s));
+    }
+}
+
 enum GffType {
+    GENE,
     MRNA,
     UTR5,
     UTR3,
     CDS,
     TRANSCRIPT,
+    EXON,
     OTHER
 };
 
 static GffType gffTypeFromString(string& s) {
     
-    if (s.compare("mRNA") == 0) {
+    if (boost::iequals(s, "gene")) {
+        return GENE;
+    }
+    else if (boost::iequals(s, "mRNA")) {
         return MRNA;
     }
-    else if (s.compare("five_prime_utr") == 0) {
+    else if (boost::iequals(s, "five_prime_utr")) {
         return UTR5;
     }
-    else if (s.compare("three_prime_utr") == 0) {
+    else if (boost::iequals(s, "three_prime_utr")) {
         return UTR3;
     }
-    else if (s.compare("CDS") == 0) {
+    else if (boost::iequals(s, "cds")) {
         return CDS;
     }
-    else if (s.compare("TRANSCRIPT") == 0) {
+    else if (boost::iequals(s, "transcript")) {
         return TRANSCRIPT;
+    }
+    else if (boost::iequals(s, "exon")) {
+        return EXON;
     }
     else {
         return OTHER;
     }
 }
 
+static string gffTypeToString(GffType type) {
+    
+    switch(type) {
+        case GENE:
+            return "gene";
+        case MRNA:
+            return "mRNA";
+        case UTR5:
+            return "five_prime_utr";
+        case UTR3:
+            return "three_prime_utr";
+        case CDS:
+            return "cds";
+        case TRANSCRIPT:
+            return "transcript";
+        case EXON:
+            return "exon";
+        case OTHER:
+            return ".";
+    }    
+}
+
 class GFF {
     
 private:
     
-    string target;
-    string tool;
+    // Enum indicating which format this file is: (GFF2, GFF3, GTF)
+    FileFormat fileFormat;
     
+    // GFF2, GFF3 and GTF features
+    string seqId;
+    string source;    
     GffType type;
     int32_t start;
     int32_t end;
-    
+    double score;
     char strand;
+    int8_t phase;
     
+    // GFF3 attributes
     string id;
     string cdsid;
     string name;
+    string alias;
     string parent;
+    string target;
+    string gap;
+    bool circular;
+    
+    // GTF attributes
+    string geneId;
+    string transcriptId;
+    
+    // Cufflinks GTF attributes
+    uint16_t exonNumber;
+    double fpkm;
+    double frac;
+    double confLo;
+    double confHigh;    
     double coverage;
-    string identity;
     
 public:
 
-    GFF() {
+    GFF(FileFormat fileFormat) : 
+        fileFormat(fileFormat),
+        seqId(""), 
+        source(""), 
+        type(OTHER), 
+        start(0), end(0),
+        score(-1.0),
+        strand('.'),
+        phase(-1) {
     }
 
     virtual ~GFF() {}
+    
+    int8_t GetPhase() const {
+        return phase;
+    }
+
+    void SetPhase(int8_t phase) {
+        this->phase = phase;
+    }
+
+    double GetScore() const {
+        return score;
+    }
+
+    void SetScore(double score) {
+        this->score = score;
+    }
     
     char GetStrand() const {
         return strand;
@@ -101,20 +197,20 @@ public:
         this->strand = strand;
     }
 
-    string GetTarget() const {
-        return target;
+    string GetSeqId() const {
+        return seqId;
     }
 
-    void SetTarget(string target) {
-        this->target = target;
+    void SetSeqId(string seqId) {
+        this->seqId = seqId;
     }
 
-    string GetTool() const {
-        return tool;
+    string GetSource() const {
+        return source;
     }
 
-    void SetTool(string tool) {
-        this->tool = tool;
+    void SetSource(string source) {
+        this->source = source;
     }
 
     
@@ -134,21 +230,12 @@ public:
         this->id = id;
     }
     
-    string GetCdsid() const {
-        return cdsid;
-    }
-
-    void SetCdsid(string cdsid) {
-        this->cdsid = cdsid;
-    }
-
-
-    string GetIdentity() const {
-        return identity;
-    }
-
-    void SetIdentity(string identity) {
-        this->identity = identity;
+    string GetRootId() const {
+        
+        vector<string> idElements;
+        boost::split( idElements, id, boost::is_any_of("|"), boost::token_compress_on );
+        size_t pos = idElements[0].find("cds");
+        return pos != std::string::npos ? idElements[0].substr(pos+4) : idElements[0];        
     }
 
     string GetName() const {
@@ -190,6 +277,158 @@ public:
     void SetStart(int32_t start) {
         this->start = start;
     }
+    
+    string GetAlias() const {
+        return alias;
+    }
+
+    void SetAlias(string alias) {
+        this->alias = alias;
+    }
+
+    bool IsCircular() const {
+        return circular;
+    }
+
+    void SetCircular(bool circular) {
+        this->circular = circular;
+    }
+
+    FileFormat GetFileFormat() const {
+        return fileFormat;
+    }
+
+    void SetFileFormat(FileFormat fileFormat) {
+        this->fileFormat = fileFormat;
+    }
+
+    string GetGap() const {
+        return gap;
+    }
+
+    void SetGap(string gap) {
+        this->gap = gap;
+    }
+
+    string GetGeneId() const {
+        return geneId;
+    }
+
+    void SetGeneId(string geneId) {
+        this->geneId = geneId;
+    }
+
+    string GetTarget() const {
+        return target;
+    }
+
+    void SetTarget(string target) {
+        this->target = target;
+    }
+
+    string GetTranscriptId() const {
+        return transcriptId;
+    }
+
+    void SetTranscriptId(string transcriptId) {
+        this->transcriptId = transcriptId;
+    }
+    
+    double GetConfHigh() const {
+        return confHigh;
+    }
+
+    void SetConfHigh(double confHigh) {
+        this->confHigh = confHigh;
+    }
+
+    double GetConfLo() const {
+        return confLo;
+    }
+
+    void SetConfLo(double confLo) {
+        this->confLo = confLo;
+    }
+
+    uint16_t GetExonNumber() const {
+        return exonNumber;
+    }
+
+    void SetExonNumber(uint16_t exonNumber) {
+        this->exonNumber = exonNumber;
+    }
+
+    double GetFpkm() const {
+        return fpkm;
+    }
+
+    void SetFpkm(double fpkm) {
+        this->fpkm = fpkm;
+    }
+
+    double GetFrac() const {
+        return frac;
+    }
+
+    void SetFrac(double frac) {
+        this->frac = frac;
+    }
+
+
+    void writeGFF3Attribs(std::ostream& out) {
+        
+        out << "ID=" << id << ";";
+        
+        if (!name.empty()) {
+            out << "Name=" << name << ";";
+        }
+        
+        if (!alias.empty()) {
+            out << "Alias=" << alias << ";";
+        }
+        
+        if (!parent.empty()) {
+            out << "Parent=" << parent << ";";
+        }
+        
+        if (!target.empty()) {
+            out << "Target=" << target << ";";
+        }
+        
+        if (!gap.empty()) {
+            out << "Gap=" << gap << ";";
+        }        
+    }
+    
+    void writeGTFAttribs(std::ostream& out) {
+        
+        out << "gene_id \"" << geneId << "\";";
+        out << "transcript_id \"" << transcriptId << "\";";
+        
+        if (exonNumber >= 0) {
+            out << "exon_number \"" << exonNumber << "\";";
+        }
+        
+        if (fpkm >= 0) {
+            out << "FPKM \"" << fpkm << "\";";
+        }
+        
+        if (frac >= 0.0) {
+            out << "frac \"" << frac << "\";";
+        }
+        
+        if (confLo >= 0.0) {
+            out << "conf_lo \"" << confLo << "\";";
+        }
+        
+        if (confHigh >= 0.0) {
+            out << "conf_hi \"" << confHigh << "\";";
+        }
+        
+        if (coverage >= 0.0) {
+            out << "cov \"" << coverage << "\";";
+        }        
+    }
 
     void write(std::ostream& out) {
         
@@ -200,19 +439,27 @@ public:
             ss << "Parent=" << parent << ";";
         }
         
-        out << target << "\t" 
-            << tool << "\t"
-            << type << "\t"
+        out << seqId << "\t" 
+            << source << "\t"
+            << gffTypeToString(type) << "\t"
             << start << "\t"
             << end << "\t"
-            << "." << "\t"
+            << (score == -1.0 ? "." : boost::lexical_cast<std::string>(score)) << "\t"
             << strand << "\t"
-            << "." << "\t"
-            << ss.str() << endl;
+            << (phase == -1 ? "." : boost::lexical_cast<std::string>(phase)) << "\t";
+            
+        if (fileFormat == GFF3) {
+            writeGFF3Attribs(out);
+        }
+        else if (fileFormat == GTF) {
+            writeGTFAttribs(out);
+        }
+        
+        out << endl;
     }
     
     
-    static shared_ptr<GFF> parse(const string& line) {
+    static shared_ptr<GFF> parse(FileFormat fileFormat, const string& line) {
         vector<string> parts;
         boost::split( parts, line, boost::is_any_of("\t"), boost::token_compress_on );
 
@@ -221,59 +468,94 @@ public:
                 "Could not parse GFF line due to incorrect number of columns. Expected 9 columns: ") + line));
         }
         
-        shared_ptr<GFF> gff = shared_ptr<GFF>(new GFF());
+        shared_ptr<GFF> gff = shared_ptr<GFF>(new GFF(fileFormat));
         
-        gff->SetTarget(parts[0]);
-        gff->SetTool(parts[1]);
+        gff->SetSeqId(parts[0]);
+        gff->SetSource(parts[1]);
         gff->SetType(gffTypeFromString(parts[2]));
         gff->SetStart(lexical_cast<int32_t>(parts[3]));
         gff->SetEnd(lexical_cast<int32_t>(parts[4]));
-        //gff->SetEnd(parts[5][0] == '.' ? -1 : lexical_cast<int32_t>(parts[5]));
+        gff->SetScore(parts[5][0] == '.' ? -1.0 : lexical_cast<double>(parts[5]));
         gff->SetStrand(parts[6][0]);
+        gff->SetPhase(parts[7][0] == '.' ? -1 : lexical_cast<int8_t>(parts[7]));
         
         vector<string> attrParts;
         boost::split( attrParts, parts[8], boost::is_any_of(";"), boost::token_compress_on );
         
         BOOST_FOREACH(string attr, attrParts) {
-            vector<string> attrElements;
-            boost::split( attrElements, attr, boost::is_any_of("="), boost::token_compress_on );
             
-            string* key = &attrElements[0];
-            string val = attrElements[1];
-            if (key->compare("ID") == 0) {
-                vector<string> idElements;
-                boost::split( idElements, attr, boost::is_any_of("|"), boost::token_compress_on );
-                size_t pos = idElements[0].find("cds");
-                if (pos != std::string::npos) {
-                    gff->SetCdsid(idElements[0].substr(pos+4));
-                }
+            boost::trim(attr);
+            
+            if (!attr.empty()) {
+                vector<string> attrElements;
                 
-                gff->SetId(val);
-            }
-            else if (key->compare("Name") == 0) {
-                gff->SetName(val);
-            }
-            else if (key->compare("Parent") == 0) {
-                gff->SetParent(val);
-            }
-            else if (key->compare("coverage") == 0) {
-                gff->SetCoverage(lexical_cast<double>(val));
-            }
-            else if (key->compare("identity") == 0) {
-                gff->SetIdentity(val);
-            }
-        
+                if (fileFormat == GFF3) {
+                    boost::split( attrElements, attr, boost::is_any_of("="), boost::token_compress_on );
+
+                    string key = attrElements[0];
+                    string val = attrElements[1];
+                    if (boost::iequals(key, "ID")) {
+                        gff->SetId(val);
+                    }
+                    else if (boost::iequals(key, "Name")) {
+                        gff->SetName(val);
+                    }
+                    else if (boost::iequals(key, "Parent")) {
+                        gff->SetParent(val);
+                    }
+                    else if (boost::iequals(key, "Alias")) {
+                        gff->SetAlias(val);
+                    }
+                    else if (boost::iequals(key, "Target")) {
+                        gff->SetTarget(val);
+                    }
+                    else if (boost::iequals(key, "Gap")) {
+                        gff->SetGap(val);
+                    }
+                }
+                else if(fileFormat == GTF || fileFormat == GFF2) {
+                    boost::split( attrElements, attr, boost::is_any_of(" "), boost::token_compress_on );
+
+                    string key = attrElements[0];
+                    string val = attrElements[1].substr(1, attrElements[1].size()-2);
+                    
+                    if (boost::iequals(key, "gene_id")) {
+                        gff->SetGeneId(val);
+                    }
+                    else if (boost::iequals(key, "transcript_id")) {
+                        gff->SetTranscriptId(val);
+                    }
+                    else if (boost::iequals(key, "exon_number")) {
+                        gff->SetExonNumber(lexical_cast<uint16_t>(val));
+                    }
+                    else if (boost::iequals(key, "FPKM")) {
+                        gff->SetFpkm(lexical_cast<double>(val));
+                    }
+                    else if (boost::iequals(key, "frac")) {
+                        gff->SetFrac(lexical_cast<double>(val));
+                    }
+                    else if (boost::iequals(key, "conf_lo")) {
+                        gff->SetConfLo(lexical_cast<double>(val));
+                    }
+                    else if (boost::iequals(key, "conf_hi")) {
+                        gff->SetConfHigh(lexical_cast<double>(val));
+                    }
+                    else if (boost::iequals(key, "coverage")) {
+                        gff->SetCoverage(lexical_cast<double>(val));
+                    }                 
+                }
+                else {
+                    BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                        "Could not recognise GFF style file format.")));
+                }        
+            }            
         }
         
         return gff;
-
     }
     
     
-    typedef std::vector< boost::shared_ptr<GFF> > GFFList;
-typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
-
-    static void load(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
+    static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
     
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Loading GFF: " << path << endl;
@@ -283,7 +565,7 @@ typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
         while (std::getline(file, line)) {            
             boost::trim(line);
             if (!line.empty()) {
-                gffs.push_back(parse(line));
+                gffs.push_back(parse(fileFormat, line));
             }
         }
         file.close();
@@ -293,8 +575,8 @@ typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
     
     static void save(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
         
-        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
-        cout << " - Saving GFF: " << path << endl;
+        auto_cpu_timer timer(1, "- Wall time taken: %ws\n\n");
+        cout << "Saving GFF: " << path << endl;
         
         std::ofstream file(path.c_str());
         BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
