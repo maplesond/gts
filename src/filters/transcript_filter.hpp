@@ -28,6 +28,7 @@ typedef boost::unordered_map<string, shared_ptr<DBAnnot> > DBAnnotIdMap;
 struct Maps {
    GFFIdMap genomicGffMap;
    GFFIdMap transdecoderCdsGffMap;
+   GFFIdMap transdecoderCDNAGffMap;
    GFFIdMap gtfMap;
    DBAnnotIdMap uniqFlnCds;
    DBAnnotIdMap uniqFlnNcCds;

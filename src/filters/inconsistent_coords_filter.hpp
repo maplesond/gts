@@ -30,10 +30,12 @@ class InconsistentCoordsFilter : public TranscriptFilter {
 private:
     bool include;
     double cdsFrac;
+    double cdnaFrac;
     
 public:
     
-    InconsistentCoordsFilter(bool include, double cds) : TranscriptFilter(), include(include), cdsFrac(cds) {}
+    InconsistentCoordsFilter(bool include, double cdsFrac, double cdnaFrac) : 
+        TranscriptFilter(), include(include), cdsFrac(cdsFrac), cdnaFrac(cdnaFrac) {}
     
     ~InconsistentCoordsFilter() {}
     
@@ -45,12 +47,20 @@ public:
         return string("Filters out CDSes that are inconsistent between transdecoder and full lengther");
     }
     
-    double getCds() const {
+    double getCdsFrac() const {
         return cdsFrac;
     }
 
-    void setCds(double cds) {
-        this->cdsFrac = cds;
+    void setCdsFrac(double cdsFrac) {
+        this->cdsFrac = cdsFrac;
+    }
+    
+    double getCdnaFrac() const {
+        return cdnaFrac;
+    }
+
+    void setCdnaFrac(double cdnaFrac) {
+        this->cdnaFrac = cdnaFrac;
     }
 
     bool isInclude() const {
@@ -107,7 +117,7 @@ protected:
 
                 if (consistent) {
                     flnCompleteConsistent++;
-                    longEnough = isCDSLongEnough(tdcLen, maps.uniqFlnCds[id], cdsFrac);
+                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnCds[id]->GetFastaLength(), cdsFrac);
                     if (longEnough) {
                         similarTranscripts++;
                     }
@@ -120,7 +130,7 @@ protected:
                 
                 if (consistent) {
                     flnCompleteConsistent++;
-                    longEnough = isCDSLongEnough(tdcLen, maps.uniqFlnNcCds[id], 0.5);
+                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnNcCds[id]->GetFastaLength(), 0.5);
                     if (longEnough) {
                         notSimilarTranscripts++;
                     }
@@ -153,13 +163,8 @@ protected:
         return deltaStart <= startThreshold && deltaEnd <= endThreshold;
     }
 
-    bool isCDSLongEnough(int32_t cdsLen, shared_ptr<DBAnnot> fln, double threshold) {
-        
-        const double seqFrac = (double)cdsLen / (double)fln->GetFastaLength();
-
-        if (seqFrac >= threshold) {
-            return true;
-        }
+    bool isSeqLongEnough(int32_t seqLen, int32_t fullTranscriptLen, double threshold) {        
+        return ((double)seqLen / (double)fullTranscriptLen) >= threshold;
     }
 };
 

@@ -50,6 +50,9 @@ namespace bfs = boost::filesystem;
 #include "filters/multiple_transcript_filter.hpp"
 #include "filters/strand_filter.hpp"
 
+const double DEFAULT_CDS_LEN_RATIO = 0.4;
+const double DEFAULT_CDNA_LEN_RATIO = 0.5;
+
 namespace gts {
 
 typedef boost::error_info<struct GTSError,string> GTSErrorInfo;
@@ -64,7 +67,7 @@ private:
     
     
     shared_ptr<GFFList> genomicGffs;
-    GFFList transdecoderCdsGffs;
+    GFFList transcriptGffs;
     GFFList gtfs;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
@@ -77,7 +80,8 @@ private:
     
     string outputPrefix;
     string gtfsFile;
-    double cds;
+    double cdsLenRatio;
+    double cdnaLenRatio;
     bool include;
     bool outputAllStages;
     bool verbose;
@@ -131,7 +135,7 @@ protected:
         GFF::load(GFF3, genomicGffFile, *genomicGffs);
         
         cout << "Loading Transcript GFF file" << endl;
-        GFF::load(GFF3, transcriptGffFile, transdecoderCdsGffs);
+        GFF::load(GFF3, transcriptGffFile, transcriptGffs);
         
         cout << "Loading Cufflinks GTF file" << endl;
         GFF::load(GTF, gtfsFile, gtfs);
@@ -161,13 +165,22 @@ protected:
         cout << "Indexed " << maps.genomicGffMap.size() << " mRNAs from genomic GFF file keyed to Root ID" << endl;
         
         // Index transdecoder CDSes
-        BOOST_FOREACH(shared_ptr<GFF> gff, transdecoderCdsGffs) {        
+        BOOST_FOREACH(shared_ptr<GFF> gff, transcriptGffs) {        
             if (gff->GetType() == CDS) {            
                 maps.transdecoderCdsGffMap[gff->GetSeqId()] = gff;
             }
         }
         
         cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Root ID" << endl;
+        
+        // Index transdecoder CDNAs
+        BOOST_FOREACH(shared_ptr<GFF> gff, transcriptGffs) {        
+            if (gff->GetType() == EXON) {            
+                maps.transdecoderCDNAGffMap[gff->GetSeqId()] = gff;
+            }
+        }
+        
+        cout << "Indexed " << maps.transdecoderCDNAGffMap.size() << " CDNAs from transcript GFF file keyed to Root ID" << endl;
         
         if (!gtfsFile.empty()) {
             // Index cufflinks transcripts
@@ -213,7 +226,7 @@ protected:
         std::vector< shared_ptr<TranscriptFilter> > filters;
         
         filters.push_back(shared_ptr<TranscriptFilter>(new MultipleOrfFilter()));
-        filters.push_back(shared_ptr<TranscriptFilter>(new InconsistentCoordsFilter(include, cds)));
+        filters.push_back(shared_ptr<TranscriptFilter>(new InconsistentCoordsFilter(include, cdsLenRatio, cdnaLenRatio)));
         filters.push_back(shared_ptr<TranscriptFilter>(new MultipleTranscriptFilter()));
         filters.push_back(shared_ptr<TranscriptFilter>(new StrandFilter()));
                         
@@ -254,10 +267,8 @@ protected:
                 gts::GFF::save(stageOut, *out);
             }
             
-            cout << "--------------------------------------" << endl << endl;           
-            
+            cout << "--------------------------------------" << endl << endl;
         }
-        
     }
     
     void setSourceForOutput(GFFList& gffs, string source) {
@@ -329,7 +340,9 @@ public :
     
     GTS(const string& genomicGffFile, const string& transcriptGffFile, const string& flnDir) :
         genomicGffFile(genomicGffFile), transcriptGffFile(transcriptGffFile), flnDir(flnDir),
-                outputPrefix("gts_out"), gtfsFile(""), cds(0.5), include(false), outputAllStages(false), verbose(false)
+                outputPrefix("gts_out"), gtfsFile(""), 
+                cdsLenRatio(DEFAULT_CDS_LEN_RATIO), cdnaLenRatio(DEFAULT_CDNA_LEN_RATIO), 
+                include(false), outputAllStages(false), verbose(false)
     {
         genomicGffs = shared_ptr<GFFList>(new GFFList());
     }
@@ -355,15 +368,26 @@ public :
     }
 
         
-    double getCds() const
+    double getCdsLenRatio() const
     {
-        return cds;
+        return cdsLenRatio;
     }
 
-    void setCds(double cds)
+    void setCdsLenRatio(double cdsLenRatio)
     {
-        this->cds = cds;
+        this->cdsLenRatio = cdsLenRatio;
     }
+    
+    double getCdnaLenRatio() const
+    {
+        return cdnaLenRatio;
+    }
+
+    void setCdnaLenRatio(double cdnaLenRatio)
+    {
+        this->cdnaLenRatio = cdnaLenRatio;
+    }
+
 
     bool isInclude() const
     {
@@ -445,7 +469,8 @@ int main(int argc, char *argv[]) {
         string flnResultsDir;
         string outputPrefix;
         bool include;
-        double cds;
+        double cdsLenRatio;
+        double cdnaLenRatio;
         bool outputAllStages;
                 
         string cufflinksGtfFile;
@@ -457,20 +482,22 @@ int main(int argc, char *argv[]) {
         // Declare the supported options.
         po::options_description generic_options(helpHeader());
         generic_options.add_options()
-                ("ggff,g", po::value<string>(&genomicGffFile), 
-                    "GFF3 file containing the genomic coordinates for the transcript features.")
-                ("tgff,t", po::value<string>(&transcriptGffFile),
-                    "GFF3 file containing the transcript coordinates for the transcript features.")
+                ("genomic_gff,g", po::value<string>(&genomicGffFile), 
+                    "Transdecoder GFF3 file containing the genomic coordinates for the transcript features.")
+                ("transcript_gff,t", po::value<string>(&transcriptGffFile),
+                    "Transdecoder GFF3 file containing the transcript coordinates for the transcript features.")
                 ("gtf", po::value<string>(&gtfsFile),
                     "GTF file containing transcripts.")
                 ("fln_dir,f", po::value<string>(&flnResultsDir),
                     "Full lengther results directory, containing the \"dbannotated.txt\" and \"new_coding.txt\" files.")
                 ("output,o", po::value<string>(&outputPrefix)->default_value(string("gts_out")),
                     "The output prefix for all output files generated.")
-                ("include", po::bool_switch(&include)->default_value(false), 
-                    "Include transcripts with no full lengther homology hit, providing it has a full lengther new_coding hit.")
-                ("cds", po::value<double>(&cds)->default_value(0.5), 
-                    "Min percentage length of CDS relative to mRNA for hits with homology.  0.0 -> 1.0")
+                ("include_putative,i", po::bool_switch(&include)->default_value(false), 
+                    "Include putative transcripts, i.e. transcripts with a full lengther new_coding hit.")
+                ("cds_ratio", po::value<double>(&cdsLenRatio)->default_value(DEFAULT_CDS_LEN_RATIO), 
+                    "Min percentage length of CDS content relative to full length transcripts for hits with homology.  0.0 -> 1.0")
+                ("cdna_ratio", po::value<double>(&cdnaLenRatio)->default_value(DEFAULT_CDNA_LEN_RATIO), 
+                    "Min percentage length of cDNA (exon) content relative to full length transcripts for hits with homology.  0.0 -> 1.0")
                 ("all,a", po::bool_switch(&outputAllStages)->default_value(false), 
                     "Whether or not to output GFF entries filtered at each stage.")
                 ("version", po::bool_switch(&version)->default_value(false), "Print version string")
@@ -510,7 +537,8 @@ int main(int argc, char *argv[]) {
         gts::GTS gts(genomicGffFile, transcriptGffFile, flnResultsDir);
         gts.setOutputPrefix(outputPrefix);
         gts.setGTFFile(gtfsFile);
-        gts.setCds(cds);
+        gts.setCdsLenRatio(cdsLenRatio);
+        gts.setCdnaLenRatio(cdnaLenRatio);
         gts.setInclude(include);
         gts.setOutputAllStages(outputAllStages);
         gts.setVerbose(verbose);
