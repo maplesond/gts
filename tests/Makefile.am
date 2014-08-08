@@ -8,7 +8,8 @@ check_gts_CPPFLAGS = @BOOST_CPPFLAGS@ @AM_CPPFLAGS@ -I$(top_srcdir)/src -I$(top_
 check_gts_CXXFLAGS = -g3 @AM_CXXFLAGS@
 check_gts_LDFLAGS = @BOOST_LDFLAGS@ -L$(top_srcdir)/src/.deps @AM_LDFLAGS@
 check_gts_LDADD = -lboost_unit_test_framework @BOOST_LIBS@
-check_gts_SOURCES =  check_gts.cpp
+check_gts_SOURCES =	check_genbank.cpp \
+			check_gts.cpp
 
 			    
 			    

@@ -31,6 +31,7 @@ using boost::lexical_cast;
 using boost::shared_ptr;
 
 namespace gts {
+namespace gff {
 
 typedef boost::error_info<struct GFFError,string> GFFErrorInfo;
 struct GFFException: virtual boost::exception, virtual std::exception { };
@@ -626,4 +627,5 @@ struct GFFOrdering {
     }
 };
 
+}
 }

@@ -43,6 +43,7 @@ namespace po = boost::program_options;
 namespace bfs = boost::filesystem;
 
 #include "gff.hpp"
+#include "genbank.hpp"
 #include "fln.hpp"
 #include "filters/transcript_filter.hpp"
 #include "filters/multiple_orf_filter.hpp"
