@@ -176,7 +176,7 @@ struct Property {
         out << "                     " << "/" << name << "=" << value << endl;
     }
     
-    static shared_ptr<Property> parseProperty(vector<string>& lines) {
+    static shared_ptr<Property> parse(vector<string>& lines) {
         
         shared_ptr<Property> p = shared_ptr<Property>(new Property());        
         
@@ -230,7 +230,13 @@ struct Feature {
         }
     }
     
-    static shared_ptr<Feature> parseFeature(vector<string>& lines) {
+    static shared_ptr<Feature> parse(vector<string>& lines) {
+        
+        /*cout << endl << "Feature lines: " << endl;
+        BOOST_FOREACH(string s, lines) {
+            cout << s << endl;
+        }
+        cout << endl;*/
         
         shared_ptr<Feature> f = shared_ptr<Feature>(new Feature());        
                 
@@ -238,17 +244,33 @@ struct Feature {
         boost::algorithm::split(strVec, lines[0], boost::is_any_of("\t "), boost::algorithm::token_compress_on);
         
         f->type = strVec[0];
-        f->location = strVec[1];
+        
+        std::ostringstream loc;
+        loc << strVec[1];
+        
+        size_t i = 1;
+        for(i = 1; i < lines.size(); i++) {
+            string line = boost::trim_copy(lines[i]);
+            
+            if (line[0] != '/') {
+                loc << line;                
+            }
+            else {
+                break;
+            }
+        }
+        
+        f->location = loc.str();
         
         bool first = true;
         vector<string> property;
         
-        for(size_t i = 1; i < lines.size(); i++) {
+        for(i; i < lines.size(); i++) {
             
             string line = boost::trim_copy(lines[i]);
             
-            if (line[i] == '/' && !first) {                
-                f->properties.push_back(Property::parseProperty(property));
+            if (line[0] == '/' && !first) {                
+                f->properties.push_back(Property::parse(property));
                 property.clear();
                 first = false;
             }            
@@ -257,7 +279,7 @@ struct Feature {
         }
         
         if (!property.empty()) {
-            f->properties.push_back(Property::parseProperty(property));
+            f->properties.push_back(Property::parse(property));
         }
         
         return f;
@@ -282,7 +304,14 @@ struct Features {
         return features.size() == 0;
     }
     
-    static shared_ptr<Features> parseFeatureBlock(Block& block) {
+    static shared_ptr<Features> parse(Block& block) {
+        
+            
+        /*cout << endl << "Features block: " << endl;
+        BOOST_FOREACH(string s, block.lines) {
+            cout << s << endl;
+        }
+        cout << endl;*/
         
         shared_ptr<Features> f = shared_ptr<Features>(new Features());        
         
@@ -298,20 +327,24 @@ struct Features {
             
             vector<string> strVec2;
             string line = boost::trim_copy(block.lines[i]);
-            boost::algorithm::split(strVec2, line, boost::is_any_of("\t "), boost::algorithm::token_compress_on);
-            cout << strVec2.size() << endl;
-            if (strVec2.size() == 2 && !first) {
-                
-                f->features.push_back(Feature::parseFeature(feature));
-                feature.clear();
-                first = false;
-            }
+            std::replace(line.begin(), line.end(), '\t', ' ');
 
-            feature.push_back(line);
+            // Look for a large gap not starting at the beginning of the string... 
+            // this is probably a feature header
+            if (line.find("    ") != string::npos && !first) {                
+                f->features.push_back(Feature::parse(feature));
+                feature.clear();
+                first = true;
+            }
+            else {
+                first = false;                
+            }
+            
+            feature.push_back(line);            
         }
         
         if (!feature.empty()) {
-            f->features.push_back(Feature::parseFeature(feature));
+            f->features.push_back(Feature::parse(feature));
         }
                 
         return f;
@@ -374,6 +407,10 @@ public:
 
     void setDefinition(shared_ptr<Block> definition) {
         this->definition = definition;
+    }
+    
+    shared_ptr<Feature> getFeature(uint16_t index) const {
+        return features->features[index];
     }
 
     shared_ptr<Features> getFeatures() const {
@@ -542,7 +579,7 @@ public:
                         gb->references.push_back(b);
                         break;
                     case FEATURES:
-                        gb->features = Features::parseFeatureBlock(*b);
+                        gb->features = Features::parse(*b);
                         break;
                     case BASE_COUNT:
                         gb->baseCount = b;
@@ -566,16 +603,17 @@ public:
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Loading Genbank: " << path << endl;
         
-        ifstream file(path.c_str());
+        ifstream file(path.c_str());        
+        
         while (file.good()) {            
             shared_ptr<Genbank> gb = readRecord(file);
-            if (gb != NULL) {
-                genbank.push_back(gb);
+            if (gb != NULL) {                
+                genbank.push_back(gb);                
             }
         }
         file.close();
         
-        cout << " - Found " << genbank.size() << " genbank records." << endl;
+        cout << " - Loaded " << genbank.size() << " genbank records." << endl;
     }
     
     static void save(const string& path, std::vector< boost::shared_ptr<Genbank> >& genbank) {

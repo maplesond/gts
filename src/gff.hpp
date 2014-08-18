@@ -579,20 +579,37 @@ public:
     
     static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
     
+        load(fileFormat, path, gffs, OTHER);
+    }
+    
+    static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs, GffType filter) {
+    
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Loading GFF: " << path << endl;
         
+        if (filter != OTHER) {
+            cout << " - Keeping only : " << gffTypeToString(filter) << endl;
+        }
+        
+        
+        uint32_t totalCount = 0;
         std::ifstream file(path.c_str());
         std::string line; 
         while (std::getline(file, line)) {            
             boost::trim(line);
             if (!line.empty()) {
-                gffs.push_back(parse(fileFormat, line));
+                
+                shared_ptr<GFF> gff = parse(fileFormat, line);
+                totalCount++;
+                
+                if (filter != OTHER && gff->GetType() == filter) {
+                    gffs.push_back(gff);
+                }
             }
         }
         file.close();
         
-        cout << " - Found " << gffs.size() << " GFF records." << endl;
+        cout << " - Loaded " << gffs.size() << " out of " << totalCount << " GFF records." << endl;
     }
     
     static void save(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {

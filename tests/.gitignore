@@ -10,3 +10,6 @@
 /check_portculis.trs
 /check_portculis
 *.o
+/check_gts
+/check_gts.log
+/check_gts.trs
