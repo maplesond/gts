@@ -302,7 +302,8 @@ protected:
         // Create map of passed transcripts
         GFFIdMap passed;
         BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
-            passed[gff->GetRootId()] = gff;
+            passed[gff->GetId()] = gff;     // For getting the mRNA and all child entries
+            passed[gff->GetParent()] = gff; // For getting the gene entries
         } 
         
         uint32_t passCount = 0;
@@ -316,7 +317,8 @@ protected:
                 
                 gff->SetSource("gts");
                 
-                if (passed.count(gff->GetRootId()) > 0) {
+                if (passed.count(gff->GetParent()) > 0 ||
+                        passed.count(gff->GetId()) > 0) {
                     gff->write(pass);
                     passCount++;
                 }

@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -33,9 +34,11 @@ using std::ofstream;
 #include <boost/lexical_cast.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/timer/timer.hpp>
+#include <boost/unordered_map.hpp>
 using boost::lexical_cast;
 using boost::shared_ptr;
 using boost::timer::auto_cpu_timer;
+using boost::unordered_map;
 
 namespace gts{
 namespace gb {
@@ -191,11 +194,15 @@ struct Property {
         ss << strVec[1];
         
         for(size_t i = 1; i < lines.size(); i++) {
-            ss << boost::trim_copy(lines[i]);
+            ss << boost::trim_copy(lines[i]);            
         }
 
-        p->value = ss.str();
-
+        string val = ss.str();
+        
+        p->value = (val[0] == '\"' && val[val.length() - 1] == '\"') ? 
+            val.substr(1, val.length() - 2) :
+            val;
+        
         return p;
     }
 };
@@ -211,10 +218,12 @@ struct Block {
     }
 };
 
+typedef unordered_map<string, shared_ptr<Property> > PropertyMap;
+
 struct Feature {
     string type;
     string location;
-    vector<shared_ptr<Property> > properties;
+    PropertyMap properties;
     
     void write(std::ostream& out) {
         std::stringstream space;
@@ -225,8 +234,8 @@ struct Feature {
         
         out << "     " << type << space.str() << location << endl;
         
-        BOOST_FOREACH(shared_ptr<Property> p, properties) {
-            p->write(out);
+        BOOST_FOREACH(PropertyMap::value_type& p, properties) {
+            p.second->write(out);
         }
     }
     
@@ -270,7 +279,8 @@ struct Feature {
             string line = boost::trim_copy(lines[i]);
             
             if (line[0] == '/' && !first) {                
-                f->properties.push_back(Property::parse(property));
+                shared_ptr<Property> p = Property::parse(property);
+                f->properties[p->name] = p;
                 property.clear();
                 first = false;
             }            
@@ -279,29 +289,34 @@ struct Feature {
         }
         
         if (!property.empty()) {
-            f->properties.push_back(Property::parse(property));
+            shared_ptr<Property> p = Property::parse(property);
+            f->properties[p->name] = p;
         }
         
         return f;
     }
 };
 
+typedef unordered_map<string, shared_ptr<Feature> > FeatureMap;
+typedef vector<shared_ptr<Feature> > FeatureList;
+
 struct Features {
     
     string header;
-    vector<shared_ptr<Feature> > features;
+    FeatureMap featureMap;
+    FeatureList featureList;
       
     void write(std::ostream& out) {
         
         out << header << endl;
         
-        BOOST_FOREACH(shared_ptr<Feature> f, features) {
+        BOOST_FOREACH(shared_ptr<Feature> f, featureList) {
             f->write(out);
-        }        
+        }         
     }
     
     bool noFeatures() {
-        return features.size() == 0;
+        return featureMap.size() == 0;
     }
     
     static shared_ptr<Features> parse(Block& block) {
@@ -313,12 +328,12 @@ struct Features {
         }
         cout << endl;*/
         
-        shared_ptr<Features> f = shared_ptr<Features>(new Features());        
+        shared_ptr<Features> newFeature = shared_ptr<Features>(new Features());        
         
         vector<string> strVec;
         boost::algorithm::split(strVec, block.lines[0], boost::is_any_of("\t "), boost::algorithm::token_compress_on);
         
-        f->header = strVec[1];
+        newFeature->header = strVec[1];
         
         vector<string> feature;
         bool first = true;
@@ -332,9 +347,17 @@ struct Features {
             // Look for a large gap not starting at the beginning of the string... 
             // this is probably a feature header
             if (line.find("    ") != string::npos && !first) {                
-                f->features.push_back(Feature::parse(feature));
-                feature.clear();
-                first = true;
+                shared_ptr<Feature> f = Feature::parse(feature);
+                newFeature->featureList.push_back(f);
+                                    
+                if (newFeature->featureMap.count(f->type)) {
+                    //std::cerr << "Found " << f->type << " before" << endl;
+                }
+                else {
+                    newFeature->featureMap[f->type] = f;
+                    feature.clear();
+                    first = true;
+                }
             }
             else {
                 first = false;                
@@ -344,10 +367,18 @@ struct Features {
         }
         
         if (!feature.empty()) {
-            f->features.push_back(Feature::parse(feature));
+            shared_ptr<Feature> f = Feature::parse(feature);                
+            newFeature->featureList.push_back(f);
+            
+            if (newFeature->featureMap.count(f->type)) {
+                //std::cerr << "Found " << f->type << " before" << endl;
+            }
+            else {
+                newFeature->featureMap[f->type] = f;                
+            }
         }
                 
-        return f;
+        return newFeature;
     }
 };
 
@@ -409,9 +440,9 @@ public:
         this->definition = definition;
     }
     
-    shared_ptr<Feature> getFeature(uint16_t index) const {
+    /*shared_ptr<Feature> getFeature(uint16_t index) const {
         return features->features[index];
-    }
+    }*/
 
     shared_ptr<Features> getFeatures() const {
         return features;
@@ -618,8 +649,8 @@ public:
     
     static void save(const string& path, std::vector< boost::shared_ptr<Genbank> >& genbank) {
         
-        auto_cpu_timer timer(1, "- Wall time taken: %ws\n\n");
-        cout << "Saving genbank: " << path << endl;
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        cout << " - Output file: " << path << endl;
         
         bool first = true;
         ofstream file(path.c_str());

@@ -67,7 +67,8 @@ enum GffType {
     CDS,
     TRANSCRIPT,
     EXON,
-    OTHER
+    OTHER,
+    ANY
 };
 
 static GffType gffTypeFromString(string& s) {
@@ -579,7 +580,7 @@ public:
     
     static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
     
-        load(fileFormat, path, gffs, OTHER);
+        load(fileFormat, path, gffs, ANY);
     }
     
     static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs, GffType filter) {
@@ -587,7 +588,7 @@ public:
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Loading GFF: " << path << endl;
         
-        if (filter != OTHER) {
+        if (filter != ANY) {
             cout << " - Keeping only : " << gffTypeToString(filter) << endl;
         }
         
@@ -602,7 +603,7 @@ public:
                 shared_ptr<GFF> gff = parse(fileFormat, line);
                 totalCount++;
                 
-                if (filter != OTHER && gff->GetType() == filter) {
+                if (filter == ANY || gff->GetType() == filter) {
                     gffs.push_back(gff);
                 }
             }

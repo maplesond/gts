@@ -53,12 +53,69 @@ using gts::gb::Feature;
 using gts::gb::Property;
 
 typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
+typedef std::vector<shared_ptr<GFF> > GFFList;
+typedef std::vector<shared_ptr<Genbank> > GBList;
 
 string helpHeader() {
     return string("\nGenbank Filter Help.\n\n") +
                   "The genbank filter tool is used to filter a genbank file based on transcripts found in a provided GFF file\n\n" +
                   "Usage: gbfilter [options] -gb <genbank file> -g <gff file> -o <output file>\n\n" +
                  "\nAvailable options";
+}
+
+void filterGenbank(GBList& input, GBList& output) {
+    
+    auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+            
+    // Index genomic GFFs by Id
+    BOOST_FOREACH(shared_ptr<Genbank> gb, input) {
+
+        uint16_t nbMrnas = gb->getFeatures()->featureMap.count("mRNA");
+        uint16_t nbCDS = gb->getFeatures()->featureMap.count("CDS");
+        
+        if (nbMrnas == 1 && nbCDS == 1) {
+            output.push_back(gb);                
+        }
+    }
+    cout << " - Keeping " << output.size() << " out of " << input.size() << " genbank records" << endl;
+}
+
+void indexGff(GFFList& gffs, GFFIdMap& gffIdMap) {
+    
+    auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+    
+    GFFIdMap gffAsmblMap;
+    GFFIdMap gffMrnaMap;
+    BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
+        vector<string> idElements;
+        string id(gff->GetId());
+        boost::split( idElements, id, boost::is_any_of("|"), boost::token_compress_on );                
+
+        gffAsmblMap[idElements[0]] = gff;
+        gffMrnaMap[idElements[0]] = gff;
+        gffIdMap[gff->GetId()] = gff;
+    }
+}
+
+void crossCheck(GBList& input, GFFIdMap& gffIdMap, GBList& output) {
+    
+    auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+    
+    BOOST_FOREACH(shared_ptr<Genbank> gb, input) {
+        bool done = false;
+        if (gb->getFeatures()->featureMap.count("CDS")) {        
+            shared_ptr<Feature> f = gb->getFeatures()->featureMap["CDS"];
+            
+            if (f->properties.count("gene")) {
+                shared_ptr<Property> p = f->properties["gene"];
+                if (gffIdMap.count(p->value)) {
+                    output.push_back(gb);                    
+                }
+            }   
+        }
+    }
+    cout << " - Keeping " << output.size() << " out of " << input.size() << " genbank records" << endl;
+        
 }
 
 
@@ -117,33 +174,19 @@ int main(int argc, char *argv[]) {
             return 0;
         }
         
+        auto_cpu_timer timer(1, "\nTotal wall time taken: %ws\n\n");
+        
+        cout << endl << "Filtering genbank file based on selected mRNA transcripts in GFF file" << endl << endl;
         
         // Load genbank file to filter
         cout << "Loading genbank file" << endl;
-        vector<shared_ptr<Genbank> > genbank;
+        GBList genbank;
         gts::gb::Genbank::load(genbankFile, genbank);
         
         // Index genomic GFFs by Id
         cout << "Filtering unsuitable genbank records" << endl;
-        vector<shared_ptr<Genbank> > genbankFiltered;
-        BOOST_FOREACH(shared_ptr<Genbank> gb, genbank) {
-            
-            uint16_t nbMrnas = 0;
-            uint16_t nbCDS = 0;
-            BOOST_FOREACH(shared_ptr<Feature> f, gb->getFeatures()->features) {
-                if (boost::iequals(f->type, "mRNA")) {
-                    nbMrnas++;
-                }
-                else if (boost::iequals(f->type, "CDS")) {
-                    nbCDS++;
-                }
-            }
-            
-            if (nbMrnas == 1 && nbCDS == 1) {
-                genbankFiltered.push_back(gb);                
-            }
-        }
-        cout << " = Keeping " << genbankFiltered.size() << " out of " << genbank.size() << " genbank records" << endl << endl;
+        GBList filteredGenbank;
+        filterGenbank(genbank, filteredGenbank);
         
         cout << "Loading GFF file" << endl;
         vector<shared_ptr<GFF> > gffs;
@@ -151,45 +194,18 @@ int main(int argc, char *argv[]) {
         
         // Index genomic GFFs by Id
         cout << "Indexing GFF file" << endl;
-        GFFIdMap gffAsmblMap;
-        GFFIdMap gffMrnaMap;
         GFFIdMap gffIdMap;
-        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
-            vector<string> idElements;
-            string id(gff->GetId());
-            boost::split( idElements, id, boost::is_any_of("|"), boost::token_compress_on );                
-
-            gffAsmblMap[idElements[0]] = gff;
-            gffMrnaMap[idElements[0]] = gff;
-            gffIdMap[gff->GetId()] = gff;
-        }
-        cout << " = done" << endl << endl;
+        indexGff(gffs, gffIdMap);
         
         // Keeping only 
         cout << "Cross checking genbank records with GFF.  Keeping matches." << endl;
-        vector<shared_ptr<Genbank> > genbankFiltered2;
-        BOOST_FOREACH(shared_ptr<Genbank> gb, genbank) {
-            bool done = false;
-            BOOST_FOREACH(shared_ptr<Feature> f, gb->getFeatures()->features) {
-                if (boost::iequals(f->type, "CDS")) {
-                   BOOST_FOREACH(shared_ptr<Property> p, f->properties) {
-                       if (boost::iequals(p->name, "gene")) {                           
-                           if (gffIdMap.count(p->value) != 0) {
-                               genbankFiltered2.push_back(gb);
-                               done = true;
-                               break;
-                           }
-                       }                                              
-                   }
-                   
-                   if (done) {
-                       break;
-                   }
-                }
-            }
-        }
-        cout << " - Keeping " << genbankFiltered2.size() << " out of " << genbankFiltered.size() << " genbank records" << endl;
+        GBList genbankFiltered2;
+        crossCheck(filteredGenbank, gffIdMap, genbankFiltered2);
         
+        cout << "Writing out filtered genbank file" << endl;        
+        Genbank::save(outputFile, genbankFiltered2);        
+        
+        cout << "Completed" << endl;
                 
     } catch (boost::exception &e) { 
         std::cerr << boost::diagnostic_information(e); 

@@ -9,3 +9,6 @@
 *.in
 /.libs/
 /gts
+/gbfilter
+/gfffilter
+/gffids
