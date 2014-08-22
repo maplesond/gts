@@ -48,8 +48,10 @@ namespace bfs = boost::filesystem;
 #include "filters/transcript_filter.hpp"
 #include "filters/multiple_orf_filter.hpp"
 #include "filters/inconsistent_coords_filter.hpp"
-#include "filters/multiple_transcript_filter.hpp"
+//#include "filters/multiple_transcript_filter.hpp"
 #include "filters/strand_filter.hpp"
+using gts::gff::GFF;
+using gts::gff::GFFModel;
 
 const double DEFAULT_CDS_LEN_RATIO = 0.4;
 const double DEFAULT_CDNA_LEN_RATIO = 0.5;
@@ -64,11 +66,11 @@ typedef std::vector< boost::shared_ptr<DBAnnot> > FLNDBAnnotList;
 
 class GTS {
     
-private:
+private:    
     
-    
-    shared_ptr<GFFList> genomicGffs;
-    GFFList transcriptGffs;
+    shared_ptr<GFFModel> genomicGffModel;
+    shared_ptr<GFFModel> alignmentGffModel;
+    GFFList alignmentGffs;
     GFFList gtfs;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
@@ -133,15 +135,15 @@ protected:
         }        
         
         cout << "Loading Genomic GFF file" << endl;
-        GFF::load(GFF3, genomicGffFile, *genomicGffs);
+        this->genomicGffModel = GFFModel::load(genomicGffFile);
         
-        cout << "Loading Transcript GFF file" << endl;
-        GFF::load(GFF3, transcriptGffFile, transcriptGffs);
+        cout << endl << "Loading Transcript GFF file" << endl;
+        GFF::load(GFF3, transcriptGffFile, alignmentGffs);
         
-        cout << "Loading Cufflinks GTF file" << endl;
+        cout << endl <<"Loading Cufflinks GTF file" << endl;
         GFF::load(GTF, gtfsFile, gtfs);
         
-        cout << "Loading Full Lengther DB Annot file" << endl;
+        cout << endl << "Loading Full Lengther DB Annot file" << endl;
         DBAnnot::load(dbAnnotFile, flnDbannots);
         
         cout << "Loading Full Lengther New Coding file" << endl;
@@ -156,32 +158,23 @@ protected:
         cout << "Creating indices" << endl
              << "----------------" << endl << endl;
         
-        // Index genomic GFFs by Id
-        BOOST_FOREACH(shared_ptr<GFF> gff, *genomicGffs) {
-            if (gff->GetType() == MRNA) {
-                maps.genomicGffMap[gff->GetRootId()] = gff;
-            }
-        }
-        
-        cout << "Indexed " << maps.genomicGffMap.size() << " mRNAs from genomic GFF file keyed to Root ID" << endl;
-        
         // Index transdecoder CDSes
-        BOOST_FOREACH(shared_ptr<GFF> gff, transcriptGffs) {        
+        BOOST_FOREACH(shared_ptr<GFF> gff, alignmentGffs) {        
             if (gff->GetType() == CDS) {            
                 maps.transdecoderCdsGffMap[gff->GetSeqId()] = gff;
             }
         }
         
-        cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Root ID" << endl;
+        cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Target ID" << endl;
         
         // Index transdecoder CDNAs
-        BOOST_FOREACH(shared_ptr<GFF> gff, transcriptGffs) {        
+        BOOST_FOREACH(shared_ptr<GFF> gff, alignmentGffs) {        
             if (gff->GetType() == EXON) {            
                 maps.transdecoderCDNAGffMap[gff->GetSeqId()] = gff;
             }
         }
         
-        cout << "Indexed " << maps.transdecoderCDNAGffMap.size() << " CDNAs from transcript GFF file keyed to Root ID" << endl;
+        cout << "Indexed " << maps.transdecoderCDNAGffMap.size() << " CDNAs (exons) from transcript GFF file keyed to Target ID" << endl;
         
         if (!gtfsFile.empty()) {
             // Index cufflinks transcripts
@@ -217,7 +210,7 @@ protected:
         cout << "Indexed " << maps.allDistinctFlnCds.size() << " total full lengther transcripts" << endl;
     }
     
-    void filter(std::vector< shared_ptr<GFFList> >& stages) {
+    void filter(std::vector< shared_ptr<GFFModel> >& stages) {
         
         auto_cpu_timer timer(1, "Total filtering time: %ws\n\n");
         
@@ -228,58 +221,51 @@ protected:
         
         filters.push_back(shared_ptr<TranscriptFilter>(new MultipleOrfFilter()));
         filters.push_back(shared_ptr<TranscriptFilter>(new InconsistentCoordsFilter(include, cdsLenRatio, cdnaLenRatio)));
-        filters.push_back(shared_ptr<TranscriptFilter>(new MultipleTranscriptFilter()));
+        //filters.push_back(shared_ptr<TranscriptFilter>(new MultipleTranscriptFilter()));
         filters.push_back(shared_ptr<TranscriptFilter>(new StrandFilter()));
                         
-        stages.push_back(genomicGffs);
+        stages.push_back(genomicGffModel);
         
         for(int i = 0; i < filters.size(); i++) {
             
-            stages.push_back(shared_ptr<GFFList>(new GFFList()));
-            shared_ptr<GFFList> in = stages[i];
-            shared_ptr<GFFList> out = stages[i+1];
+            stages.push_back(shared_ptr<GFFModel>(new GFFModel()));
+            shared_ptr<GFFModel> in = stages[i];
+            shared_ptr<GFFModel> out = stages[i+1];
             
             cout << "Executing filter " << i+1 << " of " << filters.size() << endl
                  << "Name: " << filters[i]->getName() << endl
                  << "Description: " << filters[i]->getDescription() << endl
-                 << "Filter input contains " << in->size() << " GFF records" << endl;
+                 << "Filter input contains " << in->getNbGenes() << " genes and " << in->getTotalNbTranscripts() << " transcripts" << endl;
                     
             // Do the filtering for this stage
             filters[i]->filter(*in, maps, *out);            
         
             // Record how many entries have been filtered
-            size_t diff = in->size() - out->size();
+            size_t geneDiff = in->getNbGenes() - out->getNbGenes();
+            size_t transcriptDiff = in->getTotalNbTranscripts() - out->getTotalNbTranscripts();
             
             cout << "Report: " << endl
                  << filters[i]->getReport() << endl;
             
-            cout << "Filtered out " << diff << " GFF records" << endl
-                 << "Output contains " << out->size() << " GFF records" << endl 
+            cout << "Filtered out " << geneDiff << " genes and " << transcriptDiff << " transcripts" << endl
+                 << "Output contains " << out->getNbGenes() << " genes and " << out->getTotalNbTranscripts() << " transcripts" << endl 
                  << "Filter " << i+1 << " of " << filters.size() << " completed" << endl << endl;
             
             // Output filtered GFF for this stage if requested
             if (outputAllStages) {
                 
-                setSourceForOutput(*out, "gts");
-                
                 std::stringstream ss;
                 ss << outputPrefix << ".stage." << (i+1) << ".gff3";
                 const string stageOut = ss.str();
-                gts::GFF::save(stageOut, *out);
+                out->save(stageOut, string("gts"));
             }
             
             cout << "--------------------------------------" << endl << endl;
         }
     }
     
-    void setSourceForOutput(GFFList& gffs, string source) {
-        
-        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
-            gff->SetSource(source);
-        }
-    }
     
-    void output(GFFList& gffs) {        
+    void output(GFFModel& goodGeneModel) {        
         
         auto_cpu_timer timer(1, "Total writing time: %ws\n\n");
         
@@ -287,7 +273,6 @@ protected:
         std::stringstream ssp;
         ssp << outputPrefix << ".pass.gff3";
         const string passOut = ssp.str(); 
-        std::ofstream pass(passOut.c_str());
         
         // Save passed output
         std::stringstream ssf;
@@ -299,44 +284,56 @@ protected:
              << "Re-processing: " << genomicGffFile << endl
              << "Splitting file based on transcripts that passed all the filters" << endl << endl;
         
-        // Create map of passed transcripts
-        GFFIdMap passed;
-        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
-            passed[gff->GetId()] = gff;     // For getting the mRNA and all child entries
-            passed[gff->GetParent()] = gff; // For getting the gene entries
-        } 
+        // Output passed results
+        goodGeneModel.save(passOut, "gts");
+                
+        uint32_t failGeneCount = 0;
+        uint32_t failTranscriptCount = 0;
         
-        uint32_t passCount = 0;
-        uint32_t failCount = 0;
-        std::ifstream in(genomicGffFile.c_str());
-        std::string line; 
-        while (std::getline(in, line)) {            
-            boost::trim(line);
-            if (!line.empty()) {
-                shared_ptr<GFF> gff = GFF::parse(GFF3, line);
+        // Output failed results
+        BOOST_FOREACH(shared_ptr<GFF> gene, *(genomicGffModel->getGeneList())) {
+            
+            string id = gene->GetId();
+            
+            if (goodGeneModel.containsGene(id)) {
+               
+                cout << "Giblets" << endl;
+                GFFList failedTranscripts;
                 
-                gff->SetSource("gts");
+                BOOST_FOREACH(shared_ptr<GFF> transcript, *(gene->GetChildList())) {
+                    
+                    if (!goodGeneModel.containsTranscript(transcript->GetId())) {
+                        failedTranscripts.push_back(transcript);
+                    }
+                }
                 
-                if (passed.count(gff->GetParent()) > 0 ||
-                        passed.count(gff->GetId()) > 0) {
-                    gff->write(pass);
-                    passCount++;
-                }
-                else {
-                    gff->write(fail);
-                    failCount++;
-                }
+                if (!failedTranscripts.empty()) {
+                    
+                    // Write out just the gene contents
+                    gene->write(fail, "gts", false);
+                    failGeneCount++;
+                
+                    // Now only write out the failed transcripts
+                    BOOST_FOREACH(shared_ptr<GFF> failedTranscript, failedTranscripts) {
+                        failedTranscript->write(fail, "gts", true);
+                        failTranscriptCount++;
+                    }
+                }                
             }
+            else {
+                // The gene wasn't in the passed gene model, so just write out the complete gene and child entries
+                gene->write(fail, "gts", true); 
+            }
+            
+            // Write a gap between the genes
+            fail << endl;            
         }
-        in.close();        
         
-        pass.close();
         fail.close();
         
-        uint32_t totalCount = passCount + failCount;
-        cout << "Processed " << totalCount << " GFF records" << endl
-             << "Sent " << passCount << " to " << passOut << endl
-             << "Sent " << failCount << " to " << failOut << endl << endl;
+        cout << "Processed " << genomicGffModel->getNbGenes() << " genes and " << genomicGffModel->getTotalNbTranscripts() << " transcripts" << endl
+             << "Sent " << goodGeneModel.getNbGenes() << " genes and " << goodGeneModel.getTotalNbTranscripts() << " transcripts to " << passOut << endl
+             << "Sent " << failGeneCount << " genes and " << failTranscriptCount << " transcripts to " << failOut << endl << endl;
     }
     
 public :
@@ -347,7 +344,8 @@ public :
                 cdsLenRatio(DEFAULT_CDS_LEN_RATIO), cdnaLenRatio(DEFAULT_CDNA_LEN_RATIO), 
                 include(false), outputAllStages(false), verbose(false)
     {
-        genomicGffs = shared_ptr<GFFList>(new GFFList());
+        genomicGffModel = shared_ptr<GFFModel>(new GFFModel());
+        alignmentGffModel = shared_ptr<GFFModel>(new GFFModel());
     }
     
     string getOutputPrefix() const
@@ -437,7 +435,7 @@ public :
         createMaps();
         
         // Do the filtering
-        std::vector< shared_ptr<GFFList> > stages;
+        std::vector< shared_ptr<GFFModel> > stages;
         filter(stages);
         
         // Output consolidated GFFs

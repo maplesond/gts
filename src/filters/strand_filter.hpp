@@ -46,18 +46,19 @@ public:
     
 protected:    
     
-    void filterInternal(GFFList& in, Maps& maps, GFFList& out) {
+    void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        BOOST_FOREACH(shared_ptr<GFF> gff, in) {
+        BOOST_FOREACH(shared_ptr<GFF> gene, *(in.getGeneList())) {
             
-            if (gff->GetStrand() == maps.gtfMap[gff->GetRootId()]->GetStrand()) {
-                out.push_back(gff);
+            if (gene->GetStrand() == maps.gtfMap[gene->GetRootId()]->GetStrand()) {
+                out.addGene(gene);
             }
         }
         
         stringstream ss;
         
-        ss << " - # Transcripts with consistent strand: " << out.size() << endl;
+        ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
+           << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getNbGenes() << endl;
         
         report = ss.str();
     }

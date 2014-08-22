@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "gff.hpp"
 #include "transcript_filter.hpp"
 
 
@@ -80,19 +81,13 @@ protected:
      * @param in Unique Transcripts that have both 5' and 3' UTRs
      * @param out 
      */
-    void filterInternal(GFFList& in, Maps& maps, GFFList& out) {
-        
-        // Create a map of the input transcripts
-        GFFIdMap uniqueTranscripts;            
-        BOOST_FOREACH(shared_ptr<GFF> gff, in) {
-           uniqueTranscripts[gff->GetRootId()] = gff;
-        }
+    void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
         // Create a map of transdecoder CDSes that are also found in the input transcripts
         GFFIdMap uniqCds;
         BOOST_FOREACH(GFFIdMap::value_type i, maps.transdecoderCdsGffMap) {        
-            if (uniqueTranscripts.count(i.second->GetSeqId())) {
-                uniqCds[i.first] = i.second;
+            if (in.containsTranscript(i.second->GetParentId())) {
+                uniqCds[i.second->GetSeqId()] = i.second;
             }
         }
         
@@ -104,33 +99,34 @@ protected:
         
         BOOST_FOREACH(GFFIdMap::value_type i, uniqCds) {
             
-            const string id = i.second->GetSeqId();
-            shared_ptr<GFF> gff = i.second;
-            int32_t tdcLen = gff->GetEnd() - gff->GetStart();
+            const string rootId = i.first;
+            const string transcriptId = i.second->GetParentId();
+            shared_ptr<GFF> cds = i.second;
+            int32_t tdcLen = cds->GetEnd() - cds->GetStart();
             
             bool consistent = false;
             bool longEnough = false;
             
-            if (maps.uniqFlnCds.count(id)) {
+            if (maps.uniqFlnCds.count(rootId)) {
                 matchingCdsFlnIds++;
-                consistent = isTDCAndFLNConsistent(gff, maps.uniqFlnCds[id], gts::POS_THRESHOLD, 2);
+                consistent = isTDCAndFLNConsistent(cds, maps.uniqFlnCds[rootId], gts::POS_THRESHOLD, 2);
 
                 if (consistent) {
                     flnCompleteConsistent++;
-                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnCds[id]->GetFastaLength(), cdsFrac);
+                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnCds[rootId]->GetFastaLength(), cdsFrac);
                     if (longEnough) {
                         similarTranscripts++;
                     }
                 }
             }            
-            else if (include && maps.uniqFlnNcCds.count(id)) {
+            else if (include && maps.uniqFlnNcCds.count(rootId)) {
                 matchingCdsFlnIds++;
-                consistent = isTDCAndFLNConsistent(gff, maps.uniqFlnNcCds[id], gts::POS_THRESHOLD, gts::POS_THRESHOLD) &&
+                consistent = isTDCAndFLNConsistent(cds, maps.uniqFlnNcCds[rootId], gts::POS_THRESHOLD, gts::POS_THRESHOLD) &&
                         tdcLen >= gts::LONG_CDS_LEN_THRESHOLD;
                 
                 if (consistent) {
                     flnCompleteConsistent++;
-                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnNcCds[id]->GetFastaLength(), 0.5);
+                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnNcCds[rootId]->GetFastaLength(), 0.5);
                     if (longEnough) {
                         notSimilarTranscripts++;
                     }
@@ -138,7 +134,7 @@ protected:
             }
             
             if (consistent && longEnough) {
-                out.push_back(uniqueTranscripts[i.second->GetSeqId()]);
+                out.addGene(in.getTranscriptById(transcriptId)->GetParent());
             }
         }
         
@@ -146,7 +142,7 @@ protected:
         
         ss << " - Including consistent full lengther new coding hits: " << std::boolalpha << include << endl
            << " - Min required ratio of transdecoder to full lengther length: " << cdsFrac << endl
-           << " - # Transdecoder CDSs with IDs matching those from input transcripts: " << uniqCds.size() << endl
+           << " - # Transdecoder CDSs with parent transcript IDs also found in input transcripts: " << uniqCds.size() << endl
            << " - # Transdecoder CDSs with IDs matching Full Lengther transcripts: " << matchingCdsFlnIds << endl
            << " - # Transcripts with consistent transdecoder CDS and Full Lengther coordinates: " << flnCompleteConsistent << endl
            << " - # Consistent and long transcripts with similarity to Complete Full Lengther transcripts: " << similarTranscripts << endl           

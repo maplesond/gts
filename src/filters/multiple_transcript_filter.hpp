@@ -48,91 +48,45 @@ public:
     
 protected:    
     
-    void filterInternal(GFFList& in, Maps& maps, GFFList& out) {
+    void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        TranscriptId2GeneIdMap geneList; 
-        GFFIdMap geneMap;            
+        TranscriptId2GeneIdMap geneList;
+        GeneId2LenMap geneCdnaLen;                
+        GFFIdMap geneMap;
         
-        BOOST_FOREACH(GFFIdMap::value_type i, maps.gtfMap) {
-            geneList[i.second->GetRootTranscriptId()] = i.second->GetGeneId();
-        }
-        
-        GeneId2LenMap geneCdnaLen;
-        
-        BOOST_FOREACH(shared_ptr<GFF> gff, in) {
+        BOOST_FOREACH(shared_ptr<GFF> gff, *(in.getGeneList())) {
             
             const string id = gff->GetRootId();            
             const string geneId = geneList[id];
             
             if (maps.allDistinctFlnCds.count(id) > 0 &&
                 (geneCdnaLen.count(geneId) == 0 || 
-                (geneCdnaLen.count(geneId) > 0 && maps.allDistinctFlnCds[id]->GetFastaLength() > geneCdnaLen[geneId]))) {
+                    (geneCdnaLen.count(geneId) > 0 && 
+                    maps.allDistinctFlnCds[id]->GetFastaLength() > geneCdnaLen[geneId]))) {
                 
+                geneCdnaLen[geneId]
                 maps.allDistinctFlnCds[id]->GetFastaLength();
-                geneMap[geneId] = gff;
+                                
+                if ()
+                shared_ptr<GFF> newGene = shared_ptr<GFF>(new GFF(*gff));
+                
+                newGene->addChild(transcript);
+                
+                out.addGene(newGene);
             }                
         }
         
         BOOST_FOREACH(GFFIdMap::value_type i, geneMap) {
-            out.push_back(i.second);
+            
         }
+        
         
         stringstream ss;
         
-        ss << " - # Genes: " << geneMap.size() << endl;
+        ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl;
+        ss << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl;
         
-        report = ss.str();
-        
-        /*
-my @lines = <CUFF>;
-my %strand_cuff;
-my %gene_list = ();
-my %gene_list_exclude = ();
-for (@lines){
-        chomp;
-    my @a = split(/\t/, $_);
-
-    (my $id) = $a[8] =~ /.*; transcript_id "(.*?)"/;
-    (my $gene) = $a[8] =~ /gene_id "(.*?)"/;
-    $strand_cuff{$id} = $a[6];
-    $gene_list{$id} = $gene;
-    #print "$gene\n";
-
-}
-
-foreach my $b (@transcript) {
-(my $gene) = ($gene_list{$b});
-$gene_list_exclude{$b} = $gene;
-
-}
-
-
-foreach my $b (@merged_pass_cds) {
-my @fln = ();
-(my $gene) = ($gene_list{$b});
-#print "$gene\n";
-
-@fln = split(/\-/,$merged_fln_cds_ns_cds{$b});
-#print "$fln[3]\n";
-
-#$gene_list_exclude{$b} = $gene;
-
-if ($fln[3] > $gene_cdna_length{$gene}) {
-$gene_cdna_length{$gene} = $fln[3];
-$gene_transcript{$gene} = $b;
-
-}
-
-
-}
-
-foreach my $values (values %gene_transcript) {
-    push(@transcripts_pass,$values);
-}
-
-
-my $size = @transcripts_pass;
-print OUTPUTFILELOG "#Transcripts passing filter 3 (selecting 1 transcript per gene) $size\n";*/
+        report = ss.str();  
     }
 };
 }

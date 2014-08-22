@@ -36,6 +36,7 @@ using std::vector;
 #include <boost/program_options.hpp>
 #include <boost/timer/timer.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/unordered/unordered_map.hpp>
 using boost::timer::auto_cpu_timer;
 using boost::shared_ptr;
 using boost::unordered_set;
@@ -50,7 +51,6 @@ using gts::gff::GFFException;
 
 typedef std::vector<shared_ptr<GFF> > GFFList;
 
-
 string helpHeader() {
     return string("\nGFF Filter Help.\n\n") +
                   "The gfffilter tool is used to filter out listed entries from the provided GFF file.  The tool will automatically try to determine parent and child relationships between the entries and filter those as well.\n\n" +
@@ -58,8 +58,26 @@ string helpHeader() {
                  "\nAvailable options";
 }
 
+/**
+ * Create gene map
+ * @param input
+ * @param gffMap
+ */
+void indexGenes(GFFList& input, unordered_set<string>& transcriptSet, unordered_set<string>& geneSet) {
+    
+    auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+    
+    BOOST_FOREACH(shared_ptr<GFF> gff, input) {
+        if (gff->GetType() == gts::gff::MRNA && transcriptSet.count(gff->GetId()) > 0) {
+            geneSet.insert(gff->GetParentId());
+        }
+    }
+    
+    cout << " - Found " << geneSet.size() << " genes to exclude from GFF." << endl;
+}
 
-void loadEntries(string& path, unordered_set<string>& entrySet) {
+
+void loadEntries(string& path, unordered_set<string>& transcriptSet) {
     
     auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
     
@@ -70,30 +88,52 @@ void loadEntries(string& path, unordered_set<string>& entrySet) {
     while (std::getline(file, line)) {            
         boost::trim(line);
         if (!line.empty()) {
-            entrySet.insert(line);
+            transcriptSet.insert(line);
         }
     }
     file.close();
         
-    cout << " - Loaded " << entrySet.size() << " entries from file." << endl;
+    cout << " - Loaded " << transcriptSet.size() << " entries from file." << endl;
 }
 
-void filter(GFFList& input, unordered_set<string>& entries, GFFList& output) {
+void filter(GFFList& input, unordered_set<string>& geneSet, unordered_set<string>& transcriptSet, GFFList& output) {
     
     auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
-            
+    
+    uint32_t keepGenes = 0;
+    uint32_t keepTranscripts = 0;
+    uint32_t totalGenes = 0;
+    uint32_t totalTranscripts = 0;
+    
     // Index genomic GFFs by Id
     BOOST_FOREACH(shared_ptr<GFF> gff, input) {
 
-        if (entries.count(gff->GetId()) > 0 ||
-                entries.count(gff->GetParent()) > 0) {
+        if (gff->GetType() == gts::gff::GENE) {
+            totalGenes++;                
+        }
+        else if (gff->GetType() == gts::gff::MRNA) {
+            totalTranscripts++;
+        }
+        
+        if (transcriptSet.count(gff->GetId()) > 0 ||      // Covers mRNA
+            transcriptSet.count(gff->GetParentId()) > 0 ||  // Covers child entries of mRNA
+            geneSet.count(gff->GetId()) > 0) {            // Covers genes
             // Do nothing
         }
         else {
             output.push_back(gff);
+            
+            if (gff->GetType() == gts::gff::GENE) {
+                keepGenes++;                
+            }
+            else if (gff->GetType() == gts::gff::MRNA) {
+                keepTranscripts++;
+            }
         }
     }
     cout << " - Keeping " << output.size() << " out of " << input.size() << " GFF records" << endl;
+    cout << " - Keeping " << keepGenes << " out of " << totalGenes << " genes" << endl;
+    cout << " - Keeping " << keepTranscripts << " out of " << totalTranscripts << " transcripts" << endl;
 }
 
 
@@ -160,15 +200,19 @@ int main(int argc, char *argv[]) {
         vector<shared_ptr<GFF> > gffs;
         GFF::load(GFF3, inputFile, gffs);
         
-        cout << "Loading entry IDs to filter" << endl;
-        unordered_set<string> entries;
-        loadEntries(listFile, entries);
+        cout << "Loading transcript IDs (mRNAs) to filter" << endl;
+        unordered_set<string> transcriptsToExclude;
+        loadEntries(listFile, transcriptsToExclude);
         
+        cout<< "Finding set of all genes to exclude GFF" << endl;
+        unordered_set<string> genesToExclude;
+        indexGenes(gffs, transcriptsToExclude, genesToExclude);
+                
         cout << "Filtering listed entries from GFF" << endl;
         vector<shared_ptr<GFF> > filtered;
-        filter(gffs, entries, filtered);
+        filter(gffs, genesToExclude, transcriptsToExclude, filtered);
         
-        cout << "Writing IDs to output" << endl;        
+        cout << "Writing filtered GFF to disk" << endl;        
         gts::gff::GFF::save(outputFile, filtered);            
         
         cout << "Completed" << endl;

@@ -45,7 +45,7 @@ public:
     
     virtual ~TranscriptFilter() = 0;
     
-    void filter(GFFList& in, Maps& maps, GFFList& out) {
+    void filter(GFFModel& in, Maps& maps, GFFModel& out) {
         
         auto_cpu_timer timer(1, "Wall time taken: %ws\n\n");
         
@@ -65,7 +65,7 @@ protected:
     
     string report;
     
-    virtual void filterInternal(GFFList& in, Maps& maps, GFFList& out) = 0; 
+    virtual void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) = 0; 
 };
 
 TranscriptFilter::~TranscriptFilter() {}

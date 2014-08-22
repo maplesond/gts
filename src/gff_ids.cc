@@ -68,7 +68,7 @@ void output(string& outputFile, GFFList& mRNAs) {
         bool done = false;
         
         string id = gff->GetId();
-        string parent = gff->GetParent();
+        string parent = gff->GetParentId();
         
         if (id.empty()) {
             BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(

@@ -28,20 +28,18 @@ using std::endl;
 
 #include <boost/filesystem.hpp>
 
-#include <genbank.hpp>
-using gts::gb::Genbank;
+#include <gff.hpp>
+using gts::gff::GFFModel;
 
-BOOST_AUTO_TEST_SUITE(genbank)
+BOOST_AUTO_TEST_SUITE(gff)
 
-BOOST_AUTO_TEST_CASE(genBankLoad) {
+BOOST_AUTO_TEST_CASE(gffLoad) {
     
-    std::vector<shared_ptr<Genbank> > genbank;
-    Genbank::load("resources/test.gb", genbank);
-    BOOST_CHECK(genbank.size() == 4);
-
-    //cout << genbank[2]->getFeature(2)->location << endl;
+    cout << "giblets" << endl;
     
-    Genbank::save("resources/test_make.gb", genbank);
+    GFFModel::load("resources/test.gff");
+    
+    
 }
 
 

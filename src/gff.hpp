@@ -17,18 +17,25 @@
 
 #pragma once
 
+#include <fstream>
 #include <string>
 #include <vector>
 using std::string;
 using std::vector;
+using std::ifstream;
+using std::ofstream;
 
 #include <boost/algorithm/string.hpp>
 #include <boost/exception/all.hpp>
+#include <boost/timer/timer.hpp>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/unordered_map.hpp>
 using boost::lexical_cast;
+using boost::timer::auto_cpu_timer;
 using boost::shared_ptr;
+using boost::unordered_map;
 
 namespace gts {
 namespace gff {
@@ -121,6 +128,12 @@ static string gffTypeToString(GffType type) {
     }    
 }
 
+class GFF;
+class GFFModel;
+
+typedef std::vector< boost::shared_ptr<GFF> > GFFList;
+typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
+
 class GFF {
     
 private:
@@ -143,7 +156,7 @@ private:
     string cdsid;
     string name;
     string alias;
-    string parent;
+    string parentId;
     string target;
     string gap;
     bool circular;
@@ -160,6 +173,11 @@ private:
     double confHigh;    
     double coverage;
     
+    // Children
+    shared_ptr<GFF> parent;
+    shared_ptr<GFFIdMap> childMap;
+    shared_ptr<GFFList> childList;
+    
 public:
 
     GFF(FileFormat fileFormat) : 
@@ -171,6 +189,32 @@ public:
         score(-1.0),
         strand('.'),
         phase(-1) {
+            
+            childMap = shared_ptr<GFFIdMap>(new GFFIdMap());
+            childList = shared_ptr<GFFList>(new GFFList());
+    }
+        
+    GFF(GFF& gff) : 
+        fileFormat(gff.fileFormat),
+        seqId(gff.seqId), 
+        source(gff.source), 
+        type(gff.type), 
+        start(gff.start), end(gff.end),
+        score(gff.score),
+        strand(gff.strand),
+        phase(gff.phase) {
+        
+        id = gff.id;
+        cdsid = gff.cdsid;
+        name = gff.name;
+        alias = gff.alias;
+        parentId = gff.parentId;
+        target = gff.target;
+        gap = gff.gap;
+        circular = gff.circular;
+        
+        childMap = shared_ptr<GFFIdMap>(new GFFIdMap());
+        childList = shared_ptr<GFFList>(new GFFList());
     }
 
     virtual ~GFF() {}
@@ -248,12 +292,12 @@ public:
         this->name = name;
     }
 
-    string GetParent() const {
-        return parent;
+    string GetParentId() const {
+        return parentId;
     }
 
-    void SetParent(string parent) {
-        this->parent = parent;
+    void SetParentId(string parent) {
+        this->parentId = parent;
     }
 
     GffType GetType() const {
@@ -389,6 +433,44 @@ public:
         this->frac = frac;
     }
 
+    void addChild(shared_ptr<GFF> gff) {        
+        addChild(gff, false);
+    }
+
+    void addChild(shared_ptr<GFF> gff, bool noMap) {
+        
+        string childId = gff->id;
+        
+        if (!noMap) {            
+            if (this->childMap->count(childId)) {
+                BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                    "Invalid GFF: Already seen this GFF in child map: ") + childId));
+            }
+            (*(this->childMap))[childId] = gff;        
+        }
+        
+        gff->parent = shared_ptr<GFF>(this);
+        this->childList->push_back(gff);
+    }
+    
+    size_t GetNbChildren() {
+        return this->childList->size();
+    }
+    
+    shared_ptr<GFFList> GetChildList() const {
+        return childList;
+    }
+
+    shared_ptr<GFFIdMap> GetChildMap() const {
+        return childMap;
+    }
+
+
+    shared_ptr<GFF> GetParent() {
+        return this->parent;
+    }
+
+
 
     void writeGFF3Attribs(std::ostream& out) {
         
@@ -404,8 +486,8 @@ public:
             elems.push_back(string("Alias=") + alias);
         }
         
-        if (!parent.empty()) {
-            elems.push_back(string("Parent=") + parent);
+        if (!parentId.empty()) {
+            elems.push_back(string("Parent=") + parentId);
         }
         
         if (!target.empty()) {
@@ -452,18 +534,26 @@ public:
 
         out << boost::algorithm::join(elems, ";");
     }
-
+    
     void write(std::ostream& out) {
+        write(out, false);
+    }
+    
+    void write(std::ostream& out, bool writeChildren) {
+        write(out, this->source, writeChildren);
+    }
+
+    void write(std::ostream& out, string newSource, bool writeChildren) {
         
         std::stringstream ss;
         ss << "ID=" << id << ";";
         
-        if (!parent.empty()) {
-            ss << "Parent=" << parent << ";";
+        if (!parentId.empty()) {
+            ss << "Parent=" << parentId << ";";
         }
         
         out << seqId << "\t" 
-            << source << "\t"
+            << newSource << "\t"
             << gffTypeToString(type) << "\t"
             << start << "\t"
             << end << "\t"
@@ -479,6 +569,12 @@ public:
         }
         
         out << endl;
+        
+        if (writeChildren) {
+            BOOST_FOREACH(shared_ptr<GFF> child, *(this->childList)) {
+                child->write(out, newSource, true);
+            }
+        }
     }
     
     
@@ -524,7 +620,7 @@ public:
                         gff->SetName(val);
                     }
                     else if (boost::iequals(key, "Parent")) {
-                        gff->SetParent(val);
+                        gff->SetParentId(val);
                     }
                     else if (boost::iequals(key, "Alias")) {
                         gff->SetAlias(val);
@@ -585,7 +681,7 @@ public:
     
     static void load(FileFormat fileFormat, const string& path, std::vector< boost::shared_ptr<GFF> >& gffs, GffType filter) {
     
-        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n");
         cout << " - Loading GFF: " << path << endl;
         
         if (filter != ANY) {
@@ -594,8 +690,8 @@ public:
         
         
         uint32_t totalCount = 0;
-        std::ifstream file(path.c_str());
-        std::string line; 
+        ifstream file(path.c_str());
+        string line; 
         while (std::getline(file, line)) {            
             boost::trim(line);
             if (!line.empty()) {
@@ -613,17 +709,30 @@ public:
         cout << " - Loaded " << gffs.size() << " out of " << totalCount << " GFF records." << endl;
     }
     
-    static void save(const string& path, std::vector< boost::shared_ptr<GFF> >& gffs) {
+    static void save(const string& path, GFFList& gffs) {
+        save(path, gffs, string(""));
+    }
+    
+    static void save(const string& path, GFFList& gffs, string source) {
         
-        auto_cpu_timer timer(1, "- Wall time taken: %ws\n\n");
-        cout << "Saving GFF: " << path << endl;
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        cout << " - Saving to: " << path << endl;
         
-        std::ofstream file(path.c_str());
+        ofstream file(path.c_str());
         BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
-            gff->write(file);
+            
+            if (source.empty()) {
+                gff->write(file);
+            }
+            else {
+                gff->write(file, source, false);
+            }
+
+            file << endl;
         }
         file.close();
     }
+    
 };
 
 struct GFFOrdering {
@@ -643,6 +752,157 @@ struct GFFOrdering {
             }
         }        
     }
+};
+
+
+
+class GFFModel {
+
+private:
+    shared_ptr<GFFList> geneList;
+    GFFIdMap geneMap;
+    GFFIdMap transcriptMap;
+
+public:
+
+    GFFModel() {
+        geneList = shared_ptr<GFFList>(new GFFList());
+    }
+    
+    virtual ~GFFModel() {}
+    
+    shared_ptr<GFF> getGeneByIndex(uint32_t index) {
+        return (*geneList)[index];
+    }
+    
+    bool containsGene(string id) {
+        return geneMap.count(id);
+    }
+
+    shared_ptr<GFF> getGeneById(string& id) {
+        return geneMap[id];
+    }
+    
+    bool containsTranscript(string id) {
+        return transcriptMap.count(id);
+    }
+    
+    shared_ptr<GFF> getTranscriptById(string id) {
+        return transcriptMap[id];
+    }
+    
+    size_t getTotalNbTranscripts() {
+        return transcriptMap.size();
+    }
+    
+    size_t getNbTranscripts(string& id) {
+        return geneMap[id]->GetNbChildren();
+    }
+    
+    size_t getNbGenes() {
+        return geneList->size();
+    }
+    
+    shared_ptr<GFFList> getGeneList() {
+        return geneList;
+    }
+        
+    void addGene(shared_ptr<GFF> gff) {
+        
+        string id = gff->GetId();
+        
+        if (gff->GetType() != GENE) {
+            BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                "The GFF provided does not represent a gene: ") + id));
+        }
+        
+        if (this->geneMap.count(id)) {
+            BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                "Invalid GFF: Already loaded gene with this Id: ") + id));
+        }
+        else {
+            this->geneMap[id] = gff;
+            this->geneList->push_back(gff);
+            
+            BOOST_FOREACH(shared_ptr<GFF> transcript, *(gff->GetChildList())) {
+                this->transcriptMap[transcript->GetId()] = transcript;
+            }
+        }
+    }
+    
+    static shared_ptr<GFFModel> load(const string& path) {
+        
+        shared_ptr<GFFModel> geneModel = shared_ptr<GFFModel>(new GFFModel);
+        
+        GFFList gffs;
+        GFF::load(GFF3, path, gffs);
+        
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n");
+        cout << " - Linking GFF records to create gene model" << endl;
+        
+        BOOST_FOREACH(shared_ptr<GFF> gff, gffs) {
+            
+            string id = gff->GetId();
+            string parent = gff->GetParentId();
+            
+            if (gff->GetType() == GENE) {
+                geneModel->addGene(gff);
+            }
+            else if (gff->GetType() == MRNA) {
+                
+                // We assume the gene is already present... should be in most GFFs
+                if (geneModel->geneMap.count(parent) > 0) {                    
+                    geneModel->geneMap[parent]->addChild(gff);
+                    geneModel->transcriptMap[id] = gff;
+                }
+                else {
+                    BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                        "Invalid GFF: Could not find parent gene for mRNA: ") + id));
+                }
+            }
+            else {
+                
+                if (geneModel->transcriptMap.count(parent) > 0) {
+                    geneModel->transcriptMap[parent]->addChild(gff, true);                        
+                }
+                else {
+                    BOOST_THROW_EXCEPTION(GFFException() << GFFErrorInfo(string(
+                        "Invalid GFF: Could not find parent transcript for GFF entry: ") + id));                    
+                }
+            }
+        }
+        
+        cout << " - Found " << geneModel->getNbGenes() << " genes and " << geneModel->getTotalNbTranscripts() << " transcripts" << endl;
+        
+        return geneModel;
+    }
+    
+    void save(const string path) {
+        save(path, string(""));
+    }
+    
+    void save(const string path, const string source) {
+        
+        auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
+        cout << " - Saving to: " << path << endl;
+        
+        ofstream file(path.c_str());
+        BOOST_FOREACH(shared_ptr<GFF> gene, *(this->geneList)) {
+            
+            if (source.empty()) {
+                gene->write(file, gene->GetSource(), true);
+            }
+            else {
+                gene->write(file, source, true);
+            }
+            
+            // Separate genes with lines
+            file << endl;
+            
+        }
+        file.close();
+    }
+    
 };
 
 }
