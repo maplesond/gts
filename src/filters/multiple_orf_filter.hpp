@@ -126,7 +126,7 @@ protected:
                 out3UTRs += good3UTRs;
                 
                 // Copy gene without child info
-                shared_ptr<GFF> newGene = shared_ptr<GFF>(new GFF(*gene));
+                shared_ptr<GFF> newGene = make_shared<GFF>(*gene);
                 
                 BOOST_FOREACH(shared_ptr<GFF> goodTranscript, goodTranscripts) {
                     newGene->addChild(goodTranscript);

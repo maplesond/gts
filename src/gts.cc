@@ -219,16 +219,16 @@ protected:
         
         std::vector< shared_ptr<TranscriptFilter> > filters;
         
-        filters.push_back(shared_ptr<TranscriptFilter>(new MultipleOrfFilter()));
-        filters.push_back(shared_ptr<TranscriptFilter>(new InconsistentCoordsFilter(include, cdsLenRatio, cdnaLenRatio)));
-        //filters.push_back(shared_ptr<TranscriptFilter>(new MultipleTranscriptFilter()));
-        filters.push_back(shared_ptr<TranscriptFilter>(new StrandFilter()));
+        filters.push_back(make_shared<MultipleOrfFilter>());
+        filters.push_back(make_shared<InconsistentCoordsFilter>(include, cdsLenRatio, cdnaLenRatio));
+        //filters.push_back(make_shared<TranscriptFilter>());
+        filters.push_back(make_shared<StrandFilter>());
                         
         stages.push_back(genomicGffModel);
         
         for(int i = 0; i < filters.size(); i++) {
             
-            stages.push_back(shared_ptr<GFFModel>(new GFFModel()));
+            stages.push_back(make_shared<GFFModel>());
             shared_ptr<GFFModel> in = stages[i];
             shared_ptr<GFFModel> out = stages[i+1];
             
@@ -344,8 +344,8 @@ public :
                 cdsLenRatio(DEFAULT_CDS_LEN_RATIO), cdnaLenRatio(DEFAULT_CDNA_LEN_RATIO), 
                 include(false), outputAllStages(false), verbose(false)
     {
-        genomicGffModel = shared_ptr<GFFModel>(new GFFModel());
-        alignmentGffModel = shared_ptr<GFFModel>(new GFFModel());
+        genomicGffModel = make_shared<GFFModel>();
+        alignmentGffModel = make_shared<GFFModel>();
     }
     
     string getOutputPrefix() const

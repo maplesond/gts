@@ -32,10 +32,12 @@ using std::ofstream;
 #include <boost/exception/all.hpp>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/make_shared.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/timer/timer.hpp>
 #include <boost/unordered_map.hpp>
 using boost::lexical_cast;
+using boost::make_shared;
 using boost::shared_ptr;
 using boost::timer::auto_cpu_timer;
 using boost::unordered_map;
@@ -181,7 +183,7 @@ struct Property {
     
     static shared_ptr<Property> parse(vector<string>& lines) {
         
-        shared_ptr<Property> p = shared_ptr<Property>(new Property());        
+        shared_ptr<Property> p = make_shared<Property>();        
         
         string line = boost::trim_copy(lines[0]);
         
@@ -247,7 +249,7 @@ struct Feature {
         }
         cout << endl;*/
         
-        shared_ptr<Feature> f = shared_ptr<Feature>(new Feature());        
+        shared_ptr<Feature> f = make_shared<Feature>();        
                 
         vector<string> strVec;
         boost::algorithm::split(strVec, lines[0], boost::is_any_of("\t "), boost::algorithm::token_compress_on);
@@ -328,7 +330,7 @@ struct Features {
         }
         cout << endl;*/
         
-        shared_ptr<Features> newFeature = shared_ptr<Features>(new Features());        
+        shared_ptr<Features> newFeature = make_shared<Features>();        
         
         vector<string> strVec;
         boost::algorithm::split(strVec, block.lines[0], boost::is_any_of("\t "), boost::algorithm::token_compress_on);
@@ -567,7 +569,7 @@ public:
    
     static shared_ptr<Genbank> readRecord(ifstream& in) {
         
-        shared_ptr<Genbank> gb = shared_ptr<Genbank>(new Genbank());
+        shared_ptr<Genbank> gb = make_shared<Genbank>();
         
         bool done = false;
         
@@ -581,7 +583,7 @@ public:
                     
         while (!done) {
 
-            shared_ptr<Block> b = shared_ptr<Block>(new Block());
+            shared_ptr<Block> b = make_shared<Block>();
             done = !readBlock(in, line, *b);
             
             // Exit loop if this is an end record marker

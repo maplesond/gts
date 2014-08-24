@@ -35,11 +35,11 @@ BOOST_AUTO_TEST_SUITE(gff)
 
 BOOST_AUTO_TEST_CASE(gffLoad) {
     
-    cout << "giblets" << endl;
+    shared_ptr<GFFModel> geneModel = GFFModel::load("resources/test_tair10_head.gff");
     
-    GFFModel::load("resources/test.gff");
-    
-    
+    BOOST_CHECK(geneModel->getNbGenes() == 6);
+    BOOST_CHECK(geneModel->getTotalNbTranscripts() == 8);
+    BOOST_CHECK(1 == 1);
 }
 
 

@@ -1,8 +1,8 @@
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    gene    630983  632359  .       +       .       ID=CUFF.100.1|g.110;Name=ORF
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    mRNA    630983  632359  .       +       .       ID=CUFF.100.1|m.110;Parent=CUFF.100.1|g.110;Name=ORF
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    five_prime_UTR  630983  631128  .       +       .       ID=CUFF.100.1|m.110.utr5p1;Parent=CUFF.100.1|m.110
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    exon    630983  631874  .       +       .       ID=CUFF.100.1|m.110.exon1;Parent=CUFF.100.1|m.110
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    CDS     631129  631874  .       +       .       ID=cds.CUFF.100.1|m.110;Parent=CUFF.100.1|m.110
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    exon    631997  632359  .       +       .       ID=CUFF.100.1|m.110.exon2;Parent=CUFF.100.1|m.110
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    CDS     631997  632102  .       +       .       ID=cds.CUFF.100.1|m.110;Parent=CUFF.100.1|m.110
-PsnmuV1.4_scaffold_1-size_679566        transdecoder    three_prime_UTR 632103  632359  .       +       .       ID=CUFF.100.1|m.110.utr3p1;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    gene    630983  632359  .       +       .       ID=CUFF.100.1|g.110;Name=ORF
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    mRNA    630983  632359  .       +       .       ID=CUFF.100.1|m.110;Parent=CUFF.100.1|g.110;Name=ORF
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    five_prime_UTR  630983  631128  .       +       .       ID=CUFF.100.1|m.110.utr5p1;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    exon    630983  631874  .       +       .       ID=CUFF.100.1|m.110.exon1;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    CDS     631129  631874  .       +       .       ID=cds.CUFF.100.1|m.110;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    exon    631997  632359  .       +       .       ID=CUFF.100.1|m.110.exon2;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    CDS     631997  632102  .       +       .       ID=cds.CUFF.100.1|m.110;Parent=CUFF.100.1|m.110
+PsnmuV1.4_scaffold_1-size_679566    transdecoder    three_prime_UTR 632103  632359  .       +       .       ID=CUFF.100.1|m.110.utr3p1;Parent=CUFF.100.1|m.110

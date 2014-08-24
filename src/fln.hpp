@@ -168,7 +168,7 @@ public:
                     lexical_cast<string>(parts.size()) + " columns.  Line: " + line));
         }
         
-        shared_ptr<DBAnnot> db = shared_ptr<DBAnnot>(new DBAnnot());
+        shared_ptr<DBAnnot> db = make_shared<DBAnnot>();
         
         db->SetId(parts[0]);
         db->SetFastaLength(lexical_cast<int32_t>(parts[1]));

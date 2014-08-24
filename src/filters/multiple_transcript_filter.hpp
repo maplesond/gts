@@ -68,7 +68,7 @@ protected:
                 maps.allDistinctFlnCds[id]->GetFastaLength();
                                 
                 if ()
-                shared_ptr<GFF> newGene = shared_ptr<GFF>(new GFF(*gff));
+                shared_ptr<GFF> newGene = make_shared<GFF>(*gff);
                 
                 newGene->addChild(transcript);
                 
