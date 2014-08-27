@@ -24,10 +24,6 @@
 using std::stringstream;        
 
 namespace gts {
-
-typedef boost::unordered_map<string, uint32_t> GeneId2LenMap;
-typedef boost::unordered_map<string, string> TranscriptId2GeneIdMap;
-
     
 class MultipleTranscriptFilter : public TranscriptFilter {
       
@@ -50,37 +46,51 @@ protected:
     
     void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        TranscriptId2GeneIdMap geneList;
-        GeneId2LenMap geneCdnaLen;                
-        GFFIdMap geneMap;
-        
-        BOOST_FOREACH(shared_ptr<GFF> gff, *(in.getGeneList())) {
+        BOOST_FOREACH(shared_ptr<GFF> gene, *(in.getGeneList())) {
             
-            const string id = gff->GetRootId();            
-            const string geneId = geneList[id];
+            const string id = gene->GetRootId();            
             
-            if (maps.allDistinctFlnCds.count(id) > 0 &&
-                (geneCdnaLen.count(geneId) == 0 || 
-                    (geneCdnaLen.count(geneId) > 0 && 
-                    maps.allDistinctFlnCds[id]->GetFastaLength() > geneCdnaLen[geneId]))) {
+            size_t nbTranscripts = gene->GetChildList()->size();
+            
+            if (nbTranscripts <= 0) {
+                // Maybe should throw an error here... but for now we just ignore
+                // Hopefully this should never happen
+            }
+            else if (nbTranscripts == 1) {
+                // Just one transcript for this gene, so pass on.
+                out.addGene(gene);
+            }
+            else {
                 
-                geneCdnaLen[geneId]
-                maps.allDistinctFlnCds[id]->GetFastaLength();
-                                
-                if ()
-                shared_ptr<GFF> newGene = make_shared<GFF>(*gff);
+                // More than one transcript so we need to pick one
+                GFFPtr longest;
+                int32_t longestLength = 0;
                 
-                newGene->addChild(transcript);
+                // Go through each transcript and 
+                BOOST_FOREACH(GFFPtr transcript, *(gene->GetChildList())) {
+                    
+                    // Sum the CDS entries for this transcript
+                    int32_t cdsLength = 0;
+                    BOOST_FOREACH(GFFPtr child, *(transcript->GetChildList())) {
+                        if (child->GetType() == CDS) {
+                            cdsLength += child->GetLength();
+                        }
+                    }
+                    
+                    if (cdsLength > longestLength) {
+                        longestLength = cdsLength;
+                        longest = transcript;                        
+                    }
+                }
                 
-                out.addGene(newGene);
+                // Copy the gene GFF (without children) and then just tag on the 
+                // existing transcript as a child
+                shared_ptr<GFF> newGene = make_shared<GFF>(*gene);
+                newGene->addChild(longest);
+                out.addGene(newGene);                
             }                
         }
-        
-        BOOST_FOREACH(GFFIdMap::value_type i, geneMap) {
-            
-        }
-        
-        
+                
         stringstream ss;
         
         ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl;

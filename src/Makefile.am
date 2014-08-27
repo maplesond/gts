@@ -16,7 +16,7 @@ gts_SOURCES =	filters/transcript_filter.hpp \
 		filters/multiple_orf_filter.hpp \
 		filters/multiple_transcript_filter.hpp \
 		filters/strand_filter.hpp \
-		filters/transcript_filter.hpp \
+		filters/overlap_filter.hpp \
 		gff.hpp \
 		fln.hpp \
 		genbank.hpp \

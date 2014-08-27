@@ -50,9 +50,10 @@ protected:
         
         BOOST_FOREACH(shared_ptr<GFF> gene, *(in.getGeneList())) {
             
-            if (gene->GetStrand() == maps.gtfMap[gene->GetRootId()]->GetStrand()) {
+            if (gene->GetStrand() == maps.gtfMap[gene->GetRootId()]->GetStrand() &&
+                    gene->GetStrand() != '.') {
                 out.addGene(gene);
-            }
+            }            
         }
         
         stringstream ss;

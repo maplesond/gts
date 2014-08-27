@@ -23,12 +23,9 @@ namespace gts {
  
 using namespace gts::gff;
     
-typedef std::vector< boost::shared_ptr<GFF> > GFFList;
-typedef boost::unordered_map<string, shared_ptr<GFF> > GFFIdMap;
 typedef boost::unordered_map<string, shared_ptr<DBAnnot> > DBAnnotIdMap;
 
 struct Maps {
-   GFFIdMap genomicGffMap;
    GFFIdMap transdecoderCdsGffMap;
    GFFIdMap transdecoderCDNAGffMap;
    GFFIdMap gtfMap;

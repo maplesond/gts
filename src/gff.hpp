@@ -36,14 +36,12 @@ using std::ostream;
 #include <boost/lexical_cast.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/shared_ptr.hpp>
-#include <boost/weak_ptr.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/enable_shared_from_this.hpp>
 using boost::lexical_cast;
 using boost::timer::auto_cpu_timer;
 using boost::make_shared;
 using boost::shared_ptr;
-using boost::weak_ptr;
 using boost::unordered_map;
 
 namespace gts {
@@ -537,6 +535,34 @@ public:
     GFFListPtr GetChildList() const {
         return childList;
     }
+    
+    GFFListPtr GetAllChildren() const {
+        
+        GFFListPtr gffs = make_shared<GFFList>();
+        
+        if (childList) {
+            BOOST_FOREACH(GFFPtr child, *(childList)) {            
+
+                gffs->push_back(child);
+
+                child->GetAllChildren(*gffs);
+            }
+        }
+        
+        return gffs;
+    }
+    
+    void GetAllChildren(GFFList& gffs) const {
+        
+        if (childList) {
+            BOOST_FOREACH(GFFPtr child, *(childList)) {            
+
+                gffs.push_back(child);
+
+                child->GetAllChildren(gffs);
+            }
+        }        
+    }
 
     GFFIdMapPtr GetChildMap() const {
         return childMap;
@@ -654,7 +680,7 @@ public:
         }
         
         out << endl;
-        
+            
         if (writeChildren) {
             BOOST_FOREACH(GFFPtr child, *(this->childList)) {
                 child->write(out, newSource, true);
@@ -818,14 +844,13 @@ public:
             else {
                 gff->write(file, source, false);
             }
-
-            file << endl;
         }
         file.close();
-    }
+    }    
     
 };
 
+// Sort by: seqid / start / end / type
 struct GFFOrdering {
     inline bool operator ()(const GFFPtr& a, const GFFPtr& b) {
         
@@ -834,12 +859,21 @@ struct GFFOrdering {
             return seqId < 0;            
         }
         else {
-            int sDiff = a->GetStart() - b->GetStart();
+            int32_t sDiff = a->GetStart() - b->GetStart();
             if (sDiff != 0) {
                 return a->GetStart() < b->GetStart();
             }
             else {
-                return a->GetEnd() < b->GetEnd();
+                int32_t eDiff = a->GetEnd() - b->GetEnd();
+                
+                if (eDiff != 0) {
+                    // We actually want the record with the largest end point to come
+                    // first... i.e. gene before exon
+                    return a->GetEnd() > b->GetEnd();
+                }
+                else {
+                    return a->GetType() < b->GetType();
+                }
             }
         }        
     }
@@ -904,6 +938,19 @@ public:
     
     GFFListPtr getGeneList() {
         return geneList;
+    }
+    
+    GFFListPtr getFullList() {
+        
+        GFFListPtr gffs = make_shared<GFFList>();
+        
+        BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
+            
+            gffs->push_back(gene);            
+            gene->GetAllChildren(*gffs);            
+        }
+        
+        return gffs;        
     }
         
     void addGene(GFFPtr gff) {
@@ -1013,29 +1060,42 @@ public:
     }
     
     void save(const string path) {
-        save(path, string(""));
+        save(path, false, string(""));
     }
     
-    void save(const string path, const string source) {
+    void save(const string path, const bool sort) {
+        save(path, sort, string(""));
+    }
+    
+    void save(const string path, const bool sort, const string source) {
         
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Saving to: " << path << endl;
         
-        ofstream file(path.c_str());
-        BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
-            
-            if (source.empty()) {
-                gene->write(file, gene->GetSource(), true);
-            }
-            else {
-                gene->write(file, source, true);
-            }
-            
-            // Separate genes with lines
-            file << endl;
-            
+        if (!this->geneList || this->geneList->empty()) {
+            cerr << "No GFFs to save!" << endl;
         }
-        file.close();
+        else {
+            
+            const string s = source.empty() ? this->geneList->at(0)->GetSource() : source;
+            
+            if (sort) {
+                cout << " - Sorting GFF records" << endl;
+                std::sort(this->geneList->begin(), this->geneList->end(), GFFOrdering());
+            }
+            
+            ofstream file(path.c_str());
+            
+            BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
+            
+                gene->write(file, s, true);
+                
+                // Separate genes with an extra line
+                file << endl;
+
+            }
+            file.close();                            
+        }        
     }
     
 };

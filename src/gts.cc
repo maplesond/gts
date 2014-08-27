@@ -48,13 +48,15 @@ namespace bfs = boost::filesystem;
 #include "filters/transcript_filter.hpp"
 #include "filters/multiple_orf_filter.hpp"
 #include "filters/inconsistent_coords_filter.hpp"
-//#include "filters/multiple_transcript_filter.hpp"
+#include "filters/multiple_transcript_filter.hpp"
 #include "filters/strand_filter.hpp"
+#include "filters/overlap_filter.hpp"
 using gts::gff::GFF;
 using gts::gff::GFFModel;
 
 const double DEFAULT_CDS_LEN_RATIO = 0.4;
 const double DEFAULT_CDNA_LEN_RATIO = 0.5;
+const uint32_t DEFAULT_WINDOW_SIZE = 1000;
 
 namespace gts {
 
@@ -86,6 +88,7 @@ private:
     double cdsLenRatio;
     double cdnaLenRatio;
     bool include;
+    uint32_t windowSize;
     bool outputAllStages;
     bool verbose;
     
@@ -221,8 +224,9 @@ protected:
         
         filters.push_back(make_shared<MultipleOrfFilter>());
         filters.push_back(make_shared<InconsistentCoordsFilter>(include, cdsLenRatio, cdnaLenRatio));
-        //filters.push_back(make_shared<TranscriptFilter>());
+        filters.push_back(make_shared<MultipleTranscriptFilter>());
         filters.push_back(make_shared<StrandFilter>());
+        filters.push_back(make_shared<OverlapFilter>(windowSize));
                         
         stages.push_back(genomicGffModel);
         
@@ -257,7 +261,7 @@ protected:
                 std::stringstream ss;
                 ss << outputPrefix << ".stage." << (i+1) << ".gff3";
                 const string stageOut = ss.str();
-                out->save(stageOut, string("gts"));
+                out->save(stageOut, true, string("gts"));
             }
             
             cout << "--------------------------------------" << endl << endl;
@@ -281,11 +285,13 @@ protected:
         std::ofstream fail(failOut.c_str());
         
         cout << "--------------------------------------" << endl << endl
+             << "Saving final output" << endl
+             << "-------------------" << endl << endl
              << "Re-processing: " << genomicGffFile << endl
              << "Splitting file based on transcripts that passed all the filters" << endl << endl;
         
         // Output passed results
-        goodGeneModel.save(passOut, "gts");
+        goodGeneModel.save(passOut, true, "gts");
                 
         uint32_t failGeneCount = 0;
         uint32_t failTranscriptCount = 0;
@@ -297,7 +303,6 @@ protected:
             
             if (goodGeneModel.containsGene(id)) {
                
-                cout << "Giblets" << endl;
                 GFFList failedTranscripts;
                 
                 BOOST_FOREACH(shared_ptr<GFF> transcript, *(gene->GetChildList())) {
@@ -322,7 +327,9 @@ protected:
             }
             else {
                 // The gene wasn't in the passed gene model, so just write out the complete gene and child entries
-                gene->write(fail, "gts", true); 
+                gene->write(fail, "gts", true);
+                failGeneCount++;
+                failTranscriptCount += gene->GetChildList()->size();
             }
             
             // Write a gap between the genes
@@ -342,7 +349,7 @@ public :
         genomicGffFile(genomicGffFile), transcriptGffFile(transcriptGffFile), flnDir(flnDir),
                 outputPrefix("gts_out"), gtfsFile(""), 
                 cdsLenRatio(DEFAULT_CDS_LEN_RATIO), cdnaLenRatio(DEFAULT_CDNA_LEN_RATIO), 
-                include(false), outputAllStages(false), verbose(false)
+                include(false), windowSize(DEFAULT_WINDOW_SIZE), outputAllStages(false), verbose(false)
     {
         genomicGffModel = make_shared<GFFModel>();
         alignmentGffModel = make_shared<GFFModel>();
@@ -399,6 +406,17 @@ public :
     {
         this->include = include;
     }
+    
+    uint32_t getWindowSize() const
+    {
+        return windowSize;
+    }
+
+    void setWindowSize(uint32_t windowSize)
+    {
+        this->windowSize = windowSize;
+    }
+
 
     bool isOutputAllStages() const
     {
@@ -470,6 +488,7 @@ int main(int argc, char *argv[]) {
         string flnResultsDir;
         string outputPrefix;
         bool include;
+        uint32_t windowSize;
         double cdsLenRatio;
         double cdnaLenRatio;
         bool outputAllStages;
@@ -495,6 +514,8 @@ int main(int argc, char *argv[]) {
                     "The output prefix for all output files generated.")
                 ("include_putative,i", po::bool_switch(&include)->default_value(false), 
                     "Include putative transcripts, i.e. transcripts with a full lengther new_coding hit.")
+                ("window_size,w", po::value<uint32_t>(&windowSize)->default_value(DEFAULT_WINDOW_SIZE), 
+                    "The gap to enforce between genes.")
                 ("cds_ratio", po::value<double>(&cdsLenRatio)->default_value(DEFAULT_CDS_LEN_RATIO), 
                     "Min percentage length of CDS content relative to full length transcripts for hits with homology.  0.0 -> 1.0")
                 ("cdna_ratio", po::value<double>(&cdnaLenRatio)->default_value(DEFAULT_CDNA_LEN_RATIO), 
@@ -541,6 +562,7 @@ int main(int argc, char *argv[]) {
         gts.setCdsLenRatio(cdsLenRatio);
         gts.setCdnaLenRatio(cdnaLenRatio);
         gts.setInclude(include);
+        gts.setWindowSize(windowSize);
         gts.setOutputAllStages(outputAllStages);
         gts.setVerbose(verbose);
         
