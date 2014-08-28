@@ -529,7 +529,7 @@ public:
     }
     
     size_t GetNbChildren() {
-        return this->childList->size();
+        return this->childList ? this->childList->size() : 0;
     }
     
     GFFListPtr GetChildList() const {
@@ -552,6 +552,7 @@ public:
         return gffs;
     }
     
+    
     void GetAllChildren(GFFList& gffs) const {
         
         if (childList) {
@@ -560,6 +561,39 @@ public:
                 gffs.push_back(child);
 
                 child->GetAllChildren(gffs);
+            }
+        }        
+    }
+    
+    GFFListPtr GetAllOfType(GffType type) const {
+        
+        GFFListPtr gffs = make_shared<GFFList>();
+        
+        if (childList) {
+            BOOST_FOREACH(GFFPtr child, *(childList)) {            
+
+                if (child->GetType() == type) {
+                    gffs->push_back(child);
+                }
+
+                child->GetAllOfType(type, *gffs);
+            }
+        }
+        
+        return gffs;
+    }
+    
+    
+    void GetAllOfType(GffType type, GFFList& gffs) const {
+        
+        if (childList) {
+            BOOST_FOREACH(GFFPtr child, *(childList)) {            
+
+                if (child->GetType() == type) {
+                    gffs.push_back(child);
+                }
+
+                child->GetAllOfType(type, gffs);
             }
         }        
     }
@@ -952,6 +986,22 @@ public:
         
         return gffs;        
     }
+    
+    GFFListPtr getAllOfType(GffType type) {
+        
+        GFFListPtr gffs = make_shared<GFFList>();
+        
+        GFFListPtr genes = this->geneList;
+        
+        if (genes) {
+            BOOST_FOREACH(GFFPtr gene, *genes) {
+                gffs->push_back(gene);            
+                gene->GetAllOfType(type, *gffs);            
+            }
+        }
+        
+        return gffs;        
+    }
         
     void addGene(GFFPtr gff) {
         
@@ -970,9 +1020,18 @@ public:
             this->geneMap[id] = gff;
             this->geneList->push_back(gff);
             
-            BOOST_FOREACH(shared_ptr<GFF> transcript, *(gff->GetChildList())) {
+            BOOST_FOREACH(GFFPtr transcript, *(gff->GetChildList())) {
                 this->transcriptMap[transcript->GetId()] = transcript;
             }
+        }
+    }
+    
+    void rebuildGeneMap() {
+       
+        this->geneMap.clear();
+        
+        BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
+            this->geneMap[gene->GetId()] = gene;
         }
     }
     
@@ -1072,30 +1131,32 @@ public:
         auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
         cout << " - Saving to: " << path << endl;
         
-        if (!this->geneList || this->geneList->empty()) {
-            cerr << "No GFFs to save!" << endl;
-        }
-        else {
-            
-            const string s = source.empty() ? this->geneList->at(0)->GetSource() : source;
-            
-            if (sort) {
-                cout << " - Sorting GFF records" << endl;
-                std::sort(this->geneList->begin(), this->geneList->end(), GFFOrdering());
+        if (this->geneList) {
+            if (this->geneList->empty()) {
+                cerr << "No GFFs to save!" << endl;
             }
+            else {
             
-            ofstream file(path.c_str());
-            
-            BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
-            
-                gene->write(file, s, true);
-                
-                // Separate genes with an extra line
-                file << endl;
+                const string s = source.empty() ? this->geneList->at(0)->GetSource() : source;
 
+                if (sort) {
+                    cout << " - Sorting GFF records" << endl;
+                    std::sort(this->geneList->begin(), this->geneList->end(), GFFOrdering());
+                }
+
+                ofstream file(path.c_str());
+
+                BOOST_FOREACH(GFFPtr gene, *(this->geneList)) {
+
+                    gene->write(file, s, true);
+
+                    // Separate genes with an extra line
+                    file << endl;
+
+                }
+                file.close();                            
             }
-            file.close();                            
-        }        
+        }
     }
     
 };

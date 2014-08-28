@@ -77,64 +77,119 @@ protected:
     
     /**
      * Filters out transcripts with inconsistent coordinates.  Ensures consistency between:
-     * 1 - input transcripts, 2 - transdecoder, 3 - full lengther
+     * cluster aligned transdecoder transcripts and full lengther
      * @param in Unique Transcripts that have both 5' and 3' UTRs
      * @param out 
      */
     void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        // Create a map of transdecoder CDSes that are also found in the input transcripts
-        GFFIdMap uniqCds;
-        BOOST_FOREACH(GFFIdMap::value_type i, maps.transdecoderCdsGffMap) {        
-            if (in.containsTranscript(i.second->GetParentId())) {
-                uniqCds[i.second->GetSeqId()] = i.second;
-            }
-        }
-        
+        uint32_t totalGenomicCDSes = 0;
+        uint32_t totalMatchedCACDSes = 0;
         uint32_t matchingCdsFlnIds = 0;
         uint32_t flnCompleteConsistent = 0;
         uint32_t flnNewConsistent = 0;
         uint32_t similarTranscripts = 0;
         uint32_t notSimilarTranscripts = 0;
         
-        BOOST_FOREACH(GFFIdMap::value_type i, uniqCds) {
+        BOOST_FOREACH(GFFPtr gene, *in.getGeneList()) {        
             
-            const string rootId = i.first;
-            const string transcriptId = i.second->GetParentId();
-            shared_ptr<GFF> cds = i.second;
-            int32_t tdcLen = cds->GetEnd() - cds->GetStart();
+            GFFList goodTranscripts;
             
-            bool consistent = false;
-            bool longEnough = false;
-            
-            if (maps.uniqFlnCds.count(rootId)) {
-                matchingCdsFlnIds++;
-                consistent = isTDCAndFLNConsistent(cds, maps.uniqFlnCds[rootId], gts::POS_THRESHOLD, 2);
+            BOOST_FOREACH(GFFPtr transcript, *gene->GetChildList()) {
+                
+                const string transcriptId = transcript->GetId();
+                const string rootId = transcript->GetRootId();
+                
+                GFFListPtr genomicCDSes = transcript->GetAllOfType(gts::gff::CDS);
+                
+                if (genomicCDSes) {
+                    
+                    totalGenomicCDSes += genomicCDSes->size();
+                    
+                    // This loop just counts how may genomic CDSes we also find in the cluster aligned file
+                    BOOST_FOREACH(GFFPtr genomicCDS, *genomicCDSes) {
 
-                if (consistent) {
-                    flnCompleteConsistent++;
-                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnCds[rootId]->GetFastaLength(), cdsFrac);
-                    if (longEnough) {
-                        similarTranscripts++;
+                        const string cdsid = genomicCDS->GetId();
+
+                        // Check 1: Can we find the genomic CDS in the cluster aligned GFF
+                        if (maps.transdecoderCdsGffMap.count(cdsid)) {
+                            totalMatchedCACDSes ++;
+                        }
+                    }
+                    
+                    BOOST_FOREACH(GFFPtr genomicCDS, *genomicCDSes) {
+
+                        const string cdsid = genomicCDS->GetId();
+
+                        // Check 1: Can we find the genomic CDS in the cluster aligned GFF
+                        if (maps.transdecoderCdsGffMap.count(cdsid)) {
+
+                            GFFPtr cacds = maps.transdecoderCdsGffMap[cdsid];
+
+                            // Just a sanity check... make sure the transcript Ids in the 
+                            // cluster aligned GFF and the genomic GFF for this CDS match
+                            const string caTranscriptId = cacds->GetParentId();                        
+                            if (!boost::equals(transcriptId, caTranscriptId)) {
+                                BOOST_THROW_EXCEPTION(TranscriptFilterException() << TranscriptFilterErrorInfo(string(
+                                    "Incompatible GFFs.  The genomic transcriptId and cluster aligned transcript Id for cluster CDS are not consistent: ") + cdsid));
+                            }
+
+                            // Get the cluster aligned CDS length
+                            int32_t tdcLen = cacds->GetEnd() - cacds->GetStart();
+
+                            bool consistent = false;
+                            bool longEnough = false;
+
+                            // Check 2: this cluster in full lengther to see if we can find something similar
+                            if (maps.uniqFlnCds.count(rootId)) {
+                                matchingCdsFlnIds++;
+                                consistent = isTDCAndFLNConsistent(cacds, maps.uniqFlnCds[rootId], gts::POS_THRESHOLD, 2);
+
+                                if (consistent) {
+                                    flnCompleteConsistent++;
+                                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnCds[rootId]->GetFastaLength(), cdsFrac);
+                                    if (longEnough) {
+                                        similarTranscripts++;
+                                    }
+                                }
+                            }            
+                            else if (include && maps.uniqFlnNcCds.count(rootId)) {
+                                matchingCdsFlnIds++;
+                                consistent = isTDCAndFLNConsistent(cacds, maps.uniqFlnNcCds[rootId], gts::POS_THRESHOLD, gts::POS_THRESHOLD) &&
+                                        tdcLen >= gts::LONG_CDS_LEN_THRESHOLD;
+
+                                if (consistent) {
+                                    flnCompleteConsistent++;
+                                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnNcCds[rootId]->GetFastaLength(), 0.5);
+                                    if (longEnough) {
+                                        notSimilarTranscripts++;
+                                    }
+                                }
+                            }
+
+                            if (consistent && longEnough) {
+                                goodTranscripts.push_back(transcript);
+                                break;  // Found a good enough CDS in this transcripts so skip out of the genomic CDS loop
+                            }
+                        }                    
                     }
                 }
-            }            
-            else if (include && maps.uniqFlnNcCds.count(rootId)) {
-                matchingCdsFlnIds++;
-                consistent = isTDCAndFLNConsistent(cds, maps.uniqFlnNcCds[rootId], gts::POS_THRESHOLD, gts::POS_THRESHOLD) &&
-                        tdcLen >= gts::LONG_CDS_LEN_THRESHOLD;
-                
-                if (consistent) {
-                    flnCompleteConsistent++;
-                    longEnough = isSeqLongEnough(tdcLen, maps.uniqFlnNcCds[rootId]->GetFastaLength(), 0.5);
-                    if (longEnough) {
-                        notSimilarTranscripts++;
-                    }
+                else {
+                    
                 }
             }
             
-            if (consistent && longEnough) {
-                out.addGene(in.getTranscriptById(transcriptId)->GetParent());
+            // We only want genes with 1 or more good transcript
+            if (goodTranscripts.size() >= 1) {                
+                
+                // Copy gene without child info
+                GFFPtr newGene = make_shared<GFF>(*gene);
+
+                BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
+                    newGene->addChild(goodTranscript);
+                }
+
+                out.addGene(newGene); 
             }
         }
         
@@ -142,12 +197,14 @@ protected:
         
         ss << " - Including consistent full lengther new coding hits: " << std::boolalpha << include << endl
            << " - Min required ratio of transdecoder to full lengther length: " << cdsFrac << endl
-           << " - # Transdecoder CDSs with parent transcript IDs also found in input transcripts: " << uniqCds.size() << endl
-           << " - # Transdecoder CDSs with IDs matching Full Lengther transcripts: " << matchingCdsFlnIds << endl
-           << " - # Transcripts with consistent transdecoder CDS and Full Lengther coordinates: " << flnCompleteConsistent << endl
-           << " - # Consistent and long transcripts with similarity to Complete Full Lengther transcripts: " << similarTranscripts << endl           
-           << " - # Consistent and long transcripts with no similarity (will be 0 if --include wasn't used): " << notSimilarTranscripts << endl;           
-       
+           << " - # Transdecoder cluster aligned CDSs with IDs also found in found in genomic GFF: " << totalMatchedCACDSes << " / " << totalGenomicCDSes << endl
+           << " - # Transdecoder cluster aligned CDSs with IDs matching Full Lengther transcripts: " << matchingCdsFlnIds << " / " << totalMatchedCACDSes << endl
+           << " - # Transcripts with consistent transdecoder CDS and Full Lengther coordinates: " << flnCompleteConsistent << " / " << matchingCdsFlnIds << endl
+           << " - # Consistent and long transcripts with similarity to Complete Full Lengther transcripts: " << similarTranscripts << " / " << flnCompleteConsistent << endl           
+           << " - # Consistent and long transcripts with no similarity (will be 0 if --include wasn't used): " << notSimilarTranscripts << " / " << flnCompleteConsistent << endl << endl           
+           << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
+           << " - # Transcripts (mRNA): " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl;
+        
         report = ss.str();
     }
 

@@ -23,6 +23,9 @@ namespace gts {
  
 using namespace gts::gff;
     
+typedef boost::error_info<struct TranscriptFilterError,string> TranscriptFilterErrorInfo;
+struct TranscriptFilterException: virtual boost::exception, virtual std::exception { };
+
 typedef boost::unordered_map<string, shared_ptr<DBAnnot> > DBAnnotIdMap;
 
 struct Maps {

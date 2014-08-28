@@ -35,10 +35,12 @@ using std::exception;
 #include <boost/timer/timer.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/unordered_set.hpp>
 using boost::to_upper_copy;
 using boost::timer::auto_cpu_timer;
 using boost::shared_ptr;
 using boost::unordered_map;
+using boost::unordered_set;
 namespace po = boost::program_options;
 namespace bfs = boost::filesystem;
 
@@ -72,8 +74,8 @@ private:
     
     shared_ptr<GFFModel> genomicGffModel;
     shared_ptr<GFFModel> alignmentGffModel;
-    GFFList alignmentGffs;
-    GFFList gtfs;
+    shared_ptr<GFFModel> genomicGffModelFixed;
+    shared_ptr<GFFModel> alignmentGffModelFixed;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
     
@@ -140,11 +142,21 @@ protected:
         cout << "Loading Genomic GFF file" << endl;
         this->genomicGffModel = GFFModel::load(genomicGffFile);
         
-        cout << endl << "Loading Transcript GFF file" << endl;
-        GFF::load(GFF3, transcriptGffFile, alignmentGffs);
+        cout << endl << "Loading Cluster Alignment GFF file" << endl;
+        this->alignmentGffModel = GFFModel::load(transcriptGffFile);
         
-        cout << endl <<"Loading Cufflinks GTF file" << endl;
-        GFF::load(GTF, gtfsFile, gtfs);
+        cout << endl <<"Loading GTF file" << endl;
+        GFFListPtr gtfs = make_shared<GFFList>();
+        GFF::load(GTF, gtfsFile, *gtfs);
+        uint32_t nbGtfTranscripts = 0;
+        BOOST_FOREACH(GFFPtr gff, *gtfs) {        
+            if (gff->GetType() == TRANSCRIPT) {
+                const string transcriptRootId = gff->GetRootTranscriptId();
+                maps.gtfMap[transcriptRootId] = gff;
+                nbGtfTranscripts++;
+            }
+        }
+        cout << " = Indexed " << maps.gtfMap.size() << " distinct GTF transcripts" << endl;
         
         cout << endl << "Loading Full Lengther DB Annot file" << endl;
         DBAnnot::load(dbAnnotFile, flnDbannots);
@@ -162,33 +174,21 @@ protected:
              << "----------------" << endl << endl;
         
         // Index transdecoder CDSes
-        BOOST_FOREACH(shared_ptr<GFF> gff, alignmentGffs) {        
-            if (gff->GetType() == CDS) {            
-                maps.transdecoderCdsGffMap[gff->GetSeqId()] = gff;
-            }
+        GFFListPtr cdses = alignmentGffModel->getAllOfType(CDS);
+        BOOST_FOREACH(GFFPtr cds, *cdses) {        
+            maps.transdecoderCdsGffMap[cds->GetId()] = cds;            
         }
         
         cout << "Indexed " << maps.transdecoderCdsGffMap.size() << " CDSes from transcript GFF file keyed to Target ID" << endl;
         
         // Index transdecoder CDNAs
-        BOOST_FOREACH(shared_ptr<GFF> gff, alignmentGffs) {        
-            if (gff->GetType() == EXON) {            
-                maps.transdecoderCDNAGffMap[gff->GetSeqId()] = gff;
-            }
+        GFFListPtr exons = alignmentGffModel->getAllOfType(EXON);
+        BOOST_FOREACH(GFFPtr cdna, *exons) {        
+            maps.transdecoderCDNAGffMap[cdna->GetId()] = cdna;            
         }
         
         cout << "Indexed " << maps.transdecoderCDNAGffMap.size() << " CDNAs (exons) from transcript GFF file keyed to Target ID" << endl;
         
-        if (!gtfsFile.empty()) {
-            // Index cufflinks transcripts
-            BOOST_FOREACH(shared_ptr<GFF> gff, gtfs) {        
-                if (gff->GetType() == TRANSCRIPT) {            
-                    maps.gtfMap[gff->GetRootTranscriptId()] = gff;
-                }
-            }
-        
-            cout << "Indexed " << maps.gtfMap.size() << " distinct GTF transcripts" << endl;
-        }
         
         // Index fln cdss by id
         BOOST_FOREACH(shared_ptr<DBAnnot> db, flnDbannots) {
@@ -213,14 +213,165 @@ protected:
         cout << "Indexed " << maps.allDistinctFlnCds.size() << " total full lengther transcripts" << endl;
     }
     
+    /**
+     * Probably input from transdecoder contains transcripts that have a unique 
+     * gene assigned.  What we need though is each gene to contain multiple transcripts
+     * if those transcripts live at the same locus.
+     * @param genes
+     */
+    GFFModelPtr resolveGeneModel(GFFModel& genes, bool genomicCoords) {
+        
+        const size_t nbGenes = genes.getNbGenes();
+        const size_t nbTranscripts = genes.getTotalNbTranscripts();
+        
+        GFFModelPtr newGeneModel = make_shared<GFFModel>();
+        
+        if (nbGenes < nbTranscripts) {
+            cout << " - Gene count and transcript count are already different.  Skipping step" << endl;
+            
+            BOOST_FOREACH(GFFPtr gene, *genes.getGeneList()) {
+                newGeneModel->addGene(gene);
+            }
+        }
+        else if (nbGenes > nbTranscripts) {
+            BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
+                        "Corrupt gene model.  Gene model contains more genes than transcripts.")));
+        }
+        else if (genes.getNbGenes() >= 2) {
+            
+            cout << " - Combining transcripts" << endl;
+            
+            GFFIdMap newGeneMap;
+            
+            // Change gene name to whatever was found in the GTF file
+            BOOST_FOREACH(GFFPtr thisGene, *genes.getGeneList()) {
+                
+                GFFListPtr transcripts = thisGene->GetChildList();
+                 
+                const string rootId = thisGene->GetRootId();                
+                
+                string geneName = maps.gtfMap[rootId]->GetGeneId();
+                
+                // Check to see if this gene cane be merged with the last one
+                if (newGeneMap.count(geneName)) {
+                
+                    GFFPtr lastGene = newGeneMap[geneName];
+                    
+                    // Sanity check
+                    if (genomicCoords && !boost::iequals(thisGene->GetSeqId(), lastGene->GetSeqId())) {
+                        
+                        BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
+                            "Genes with same Id are not on the same target sequence: Gene Id: ") 
+                                + thisGene->GetId() + " - Target Seq Id: " + thisGene->GetSeqId()));                        
+                    }
+                    
+                    // Move transcripts across to last Gene
+                    BOOST_FOREACH(GFFPtr transcript, *transcripts) {
+
+                        // Update this transcript's parent gene id.
+                        transcript->SetParentId(geneName);
+                        
+                        // Fix CDS Ids
+                        fixCDSIds(transcript);
+                        
+                        // Add this transcript to the existing gene
+                        lastGene->addChild(transcript);
+                        
+                        // Extend start coord if necessary
+                        if (transcript->GetStart() < lastGene->GetStart()) {
+                            lastGene->SetStart(transcript->GetStart());
+                        }
+                        
+                        // Extend end coord if necessary 
+                        if (transcript->GetEnd() > lastGene->GetEnd()) {
+                            lastGene->SetEnd(transcript->GetEnd());
+                        }
+                    }
+                }
+                else {                                    
+                    
+                    // Set the new gene id
+                    thisGene->SetId(geneName);
+                    
+                    if (geneName.empty()) {
+                        BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
+                            "Could not find transcript assembly id in GTF file: ") + rootId));
+                    }
+
+                    newGeneMap[geneName] = thisGene;
+                    
+                    // Update the transcripts' parent gene id.
+                    BOOST_FOREACH(GFFPtr transcript, *transcripts) {
+                        transcript->SetParentId(geneName);                        
+                        fixCDSIds(transcript);
+                    }                                       
+                }
+            }
+            
+            BOOST_FOREACH(GFFIdMap::value_type& i, newGeneMap) {
+                newGeneModel->addGene(i.second);
+            }            
+        }
+        else {
+            BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
+                        "Must have at least 2 or more genes to rebuild gene model")));
+        }
+        
+        return newGeneModel;        
+    }
+    
+    /**
+     * Resolve CDS ids (convert from "cds.xxxx" to xxxx.cds<n>)
+     * @param transcript The transcript containing CDSs to fix
+     */
+    void fixCDSIds(GFFPtr transcript) {
+        GFFListPtr cdses = transcript->GetAllOfType(gts::gff::CDS);                
+        uint16_t cdsIndex = 1;
+        BOOST_FOREACH(GFFPtr cds, *cdses) {
+
+            const string cdsid = cds->GetId();
+
+            if (cdsid.find("cds.") == 0) {
+
+                stringstream ss;
+                ss << cdsid.substr(4) << ".cds" << cdsIndex++;
+
+                cds->SetId(ss.str());
+            }                    
+        }
+    }
+    
+    void resolveGenes() {
+        
+        auto_cpu_timer timer(1, "Total resolving time: %ws\n\n");
+        
+        cout << "Resolving gene model using GTF gene names" << endl
+             << "-----------------------------------------" << endl << endl
+             << "Processing genomic gene model" << endl;
+        
+        this->genomicGffModelFixed = resolveGeneModel(*(this->genomicGffModel), true);
+        
+        cout << " = Gene model contains " << this->genomicGffModelFixed->getNbGenes() 
+                << " genes and " << this->genomicGffModelFixed->getTotalNbTranscripts() 
+                << " transcripts" << endl << endl;
+        
+        cout << "Processing cluster alignment gene model" << endl;        
+        
+        this->alignmentGffModelFixed = resolveGeneModel(*(this->alignmentGffModel), false);        
+        
+        cout << " = Gene model contains " << this->alignmentGffModelFixed->getNbGenes() 
+                << " genes and " << this->alignmentGffModelFixed->getTotalNbTranscripts() 
+                << " transcripts" << endl << endl;
+    }
+    
     void filter(std::vector< shared_ptr<GFFModel> >& stages) {
         
         auto_cpu_timer timer(1, "Total filtering time: %ws\n\n");
         
-        cout << "Filtering transcripts" << endl
-             << "---------------------" << endl << endl;
+        cout << "Filtering genomic gene model" << endl
+             << "----------------------------" << endl << endl;
         
-        std::vector< shared_ptr<TranscriptFilter> > filters;
+        vector< shared_ptr<TranscriptFilter> > filters;
         
         filters.push_back(make_shared<MultipleOrfFilter>());
         filters.push_back(make_shared<InconsistentCoordsFilter>(include, cdsLenRatio, cdnaLenRatio));
@@ -228,7 +379,7 @@ protected:
         filters.push_back(make_shared<StrandFilter>());
         filters.push_back(make_shared<OverlapFilter>(windowSize));
                         
-        stages.push_back(genomicGffModel);
+        stages.push_back(genomicGffModelFixed);
         
         for(int i = 0; i < filters.size(); i++) {
             
@@ -449,11 +600,14 @@ public :
         // Load the input data
         load();
         
+        // Resolve genes so that we have one gene and one or more transcripts
+        resolveGenes();
+        
         // Create maps to assist filters
         createMaps();
         
         // Do the filtering
-        std::vector< shared_ptr<GFFModel> > stages;
+        vector<GFFModelPtr> stages;
         filter(stages);
         
         // Output consolidated GFFs

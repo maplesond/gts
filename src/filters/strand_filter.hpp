@@ -48,12 +48,40 @@ protected:
     
     void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        BOOST_FOREACH(shared_ptr<GFF> gene, *(in.getGeneList())) {
+        BOOST_FOREACH(GFFPtr gene, *(in.getGeneList())) {
             
-            if (gene->GetStrand() == maps.gtfMap[gene->GetRootId()]->GetStrand() &&
-                    gene->GetStrand() != '.') {
-                out.addGene(gene);
-            }            
+            GFFList goodTranscripts;
+            const char geneStrand = gene->GetStrand();            
+            
+            if (geneStrand != '.') {
+                
+                GFFListPtr transcripts = gene->GetChildList();
+                BOOST_FOREACH(GFFPtr transcript, *transcripts) {
+
+                    const char transcriptStrand = transcript->GetStrand();
+                    const char gtfStrand = maps.gtfMap[transcript->GetRootId()]->GetStrand();
+
+                    if (transcriptStrand == geneStrand &&
+                        transcriptStrand == gtfStrand &&
+                        transcriptStrand != '.') {
+
+                        goodTranscripts.push_back(transcript);
+                    } 
+                }
+
+                // We only want genes with 1 or more good transcript
+                if (goodTranscripts.size() >= 1) {                
+
+                    // Copy gene without child info
+                    GFFPtr newGene = make_shared<GFF>(*gene);
+
+                    BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
+                        newGene->addChild(goodTranscript);
+                    }
+
+                    out.addGene(newGene);
+                }
+            }
         }
         
         stringstream ss;
