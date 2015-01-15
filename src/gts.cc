@@ -50,7 +50,6 @@ namespace bfs = boost::filesystem;
 #include "filters/transcript_filter.hpp"
 #include "filters/multiple_orf_filter.hpp"
 #include "filters/inconsistent_coords_filter.hpp"
-#include "filters/multiple_transcript_filter.hpp"
 #include "filters/strand_filter.hpp"
 #include "filters/overlap_filter.hpp"
 using gts::gff::GFF;
@@ -72,10 +71,10 @@ class GTS {
     
 private:    
     
-    shared_ptr<GFFModel> genomicGffModel;
-    shared_ptr<GFFModel> alignmentGffModel;
-    shared_ptr<GFFModel> genomicGffModelFixed;
-    shared_ptr<GFFModel> alignmentGffModelFixed;
+    GFFModelPtr genomicGffModel;
+    GFFModelPtr alignmentGffModel;
+    GFFModelPtr genomicGffModelFixed;
+    GFFModelPtr alignmentGffModelFixed;
     FLNDBAnnotList flnDbannots;
     FLNDBAnnotList flnNc;
     
@@ -375,9 +374,8 @@ protected:
         
         filters.push_back(make_shared<MultipleOrfFilter>());
         filters.push_back(make_shared<InconsistentCoordsFilter>(include, cdsLenRatio, cdnaLenRatio));
-        filters.push_back(make_shared<MultipleTranscriptFilter>());
         filters.push_back(make_shared<StrandFilter>());
-        filters.push_back(make_shared<OverlapFilter>(windowSize));
+        filters.push_back(make_shared<OverlapFilter>(windowSize, genomicGffModelFixed));
                         
         stages.push_back(genomicGffModelFixed);
         

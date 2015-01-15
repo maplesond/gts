@@ -58,9 +58,9 @@ using gts::gff::GFFModelPtr;
 typedef std::vector<shared_ptr<GFF> > GFFList;
 
 string helpHeader() {
-    return string("\nGFF Filter Help.\n\n") +
-                  "The gff_filter tool is used to filter out listed entries from the provided GFF file.  The tool will automatically try to determine parent and child relationships between the entries and filter those as well.\n\n" +
-                  "Usage: gff_filter [options] -i <gff file> -l <list file> -o <gff file>\n\n" +
+    return string("\nGTF Filter Help.\n\n") +
+                  "The gtf_filter tool is used to filter out listed entries from the provided GFF file.  The tool will automatically try to determine parent and child relationships between the entries and filter those as well.\n\n" +
+                  "Usage: gtf_filter [options] -i <gtf file> -o <gff file>\n\n" +
                  "\nAvailable options";
 }
 
@@ -84,40 +84,34 @@ void loadEntries(string& path, unordered_set<string>& transcriptSet) {
     cout << " - Loaded " << transcriptSet.size() << " entries from file." << endl;
 }
 
-void filter(GFFModel& input, unordered_set<string>& transcriptSet, GFFModel& output) {
+void fpkmFilter(GFFList& input, double minFpkm, double maxFpkm, GFFList& output) {
+   
+    bool doMin = minFpkm != -1.0;
+    bool doMax = maxFpkm != -1.0;
     
-    auto_cpu_timer timer(1, " = Wall time taken: %ws\n\n");
-    
-    // Index genomic GFFs by Id
-    BOOST_FOREACH(GFFPtr gene, *input.getGeneList()) {
-
-        GFFList goodTranscripts;
+    BOOST_FOREACH(GFFPtr gtf, input) {
         
-        BOOST_FOREACH(GFFPtr transcript, *gene->GetChildList()) {
-            
-            if (transcriptSet.count(transcript->GetId()) > 0) {
-                // Do nothing
-            }
-            else {
-                goodTranscripts.push_back(transcript);
+        double fpkm = gtf->GetFpkm();
+
+        if (doMin && doMax) {
+            if (fpkm > minFpkm && fpkm <= maxFpkm) {
+                output.push_back(gtf);
             }
         }
-        
-        // We only want genes with 1 or more good transcript
-        if (goodTranscripts.size() >= 1) {                
-
-            // Copy gene without child info
-            GFFPtr newGene = make_shared<GFF>(*gene);
-
-            BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
-                newGene->addChild(goodTranscript);
+        else if (doMin && !doMax) {
+            if (fpkm > minFpkm) {
+                output.push_back(gtf);
             }
-
-            output.addGene(newGene); 
         }
+        else if (!doMin && doMax) {
+            if (fpkm <= maxFpkm) {
+                output.push_back(gtf);
+            }
+        }                
+       
     }
-    cout << " - Keeping " << output.getNbGenes() << " out of " << input.getNbGenes() << " genes" << endl;
-    cout << " - Keeping " << output.getTotalNbTranscripts() << " out of " << input.getTotalNbTranscripts() << " transcripts" << endl;
+    
+    cout << " - Keeping " << output.size() << " out of " << input.size() << " GFF records" << endl;
 }
 
 void typeFilter(GFFList& input, string typeInc, string typeExc, GFFList& output) {
@@ -162,10 +156,12 @@ int main(int argc, char *argv[]) {
     try {
         // Portculis args
         string inputFile;
-        string listFile;
         string typeInc;
         string typeExc;
+        double fpkmMin;
+        double fpkmMax;
         string outputFile;
+        string outputTranscriptIds;
         
         bool version;
         bool help;
@@ -174,15 +170,19 @@ int main(int argc, char *argv[]) {
         po::options_description generic_options(helpHeader());
         generic_options.add_options()
                 ("input,i", po::value<string>(&inputFile), 
-                    "The input GFF file to filter")
-                ("list,l", po::value<string>(&listFile),
-                    "The list of GFF ids to filter")
+                    "The input GTF file to filter")
                 ("type_inc,ti", po::value<string>(&typeInc),
                     "Output will include only records with this type")
                 ("type_exc,te", po::value<string>(&typeExc),
                     "Output will exclude records with this type")
+                ("fpkm_min", po::value<double>(&fpkmMin)->default_value(-1.0),
+                    "Output will contain only records with FPKM values greater than the supplied number")
+                ("fpkm_max", po::value<double>(&fpkmMax)->default_value(-1.0),
+                    "Output will contain only records with FPKM values equal to or less than the supplied number")
                 ("output,o", po::value<string>(&outputFile),
                     "The tab separated output file which will contain IDs")
+                ("output_transcript_ids", po::value<string>(&outputTranscriptIds),
+                    "The line separated list of transcript ids found in the filtered set")        
                 ("version", po::bool_switch(&version)->default_value(false), "Print version string")
                 ("help", po::bool_switch(&help)->default_value(false), "Produce help message")
                 ;
@@ -223,39 +223,46 @@ int main(int argc, char *argv[]) {
         }
         
         cout << "Loading gene model" << endl;
-        GFFModelPtr geneModel = GFFModel::load(inputFile);            
+        GFFListPtr gtfs = make_shared<GFFList>();
+        GFF::load(GTF, inputFile, *gtfs);            
 
-        GFFModelPtr in1 = geneModel;
-        GFFModelPtr in2;
-        GFFModelPtr in3;
-        GFFModelPtr in4;
-            
-        if (!listFile.empty()) {
-            
-            cout << "Loading transcript IDs (mRNAs) to filter" << endl;
-            unordered_set<string> transcriptsToExclude;
-            loadEntries(listFile, transcriptsToExclude);
-
-            cout << "Filtering listed entries from GFF" << endl;
-            in2 = make_shared<GFFModel>();
-            GFFModelPtr gmOut = make_shared<GFFModel>();
-            filter(*in1, transcriptsToExclude, *in2);
+        GFFListPtr in1 = gtfs;
+        GFFListPtr in2;
+        GFFListPtr in3;
+        
+        if (fpkmMin != -1.0 || fpkmMax != -1.0) {
+           cout << "Filtering by FPKM" << endl;
+           in2 = make_shared<GFFList>();
+           fpkmFilter(*in1, fpkmMin, fpkmMax, *in2);
         }
         else {
-            in2 = geneModel;
+            in3 = in2;
         }
         
-        /*if (!typeInc.empty() || !typeExc.empty()) {
+        if (!typeInc.empty() || !typeExc.empty()) {
             cout << "Filtering by type" << endl;
-            in4 = make_shared<GFFList>();
-            typeFilter(*in3, typeInc, typeExc, *in4);            
+            in3 = make_shared<GFFList>();
+            typeFilter(*in2, typeInc, typeExc, *in3);            
         }
         else {
-            in4 = in3;
-        }*/
+            in3 = in2;
+        }
         
         cout << "Writing filtered GFF to disk" << endl;        
-        in2->save(outputFile);
+        gts::gff::GFF::save(outputFile, *in3);
+        
+        if (!outputTranscriptIds.empty()) {
+            
+            cout << "Writing list of excluded transcripts" << endl;    
+            ofstream file(outputTranscriptIds.c_str());
+        
+            BOOST_FOREACH(GFFPtr gff, *in3) {
+                if (gff->GetType() == gts::gff::TRANSCRIPT) {
+                    file << gff->GetTranscriptId() << endl;
+                }
+            }
+            file.close();
+        }
         
         cout << "Completed" << endl;
                 

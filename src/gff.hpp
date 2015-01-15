@@ -83,6 +83,8 @@ enum GffType {
     CDS,
     TRANSCRIPT,
     EXON,
+    TSS,
+    TTS,
     OTHER,
     ANY
 };
@@ -116,6 +118,12 @@ static GffType gffTypeFromString(string& s) {
     else if (boost::iequals(s, "exon")) {
         return EXON;
     }
+    else if (boost::iequals(s, "tss")) {
+        return TSS;
+    }
+    else if (boost::iequals(s, "tts")) {
+        return TTS;
+    }
     else {
         return OTHER;
     }
@@ -137,11 +145,15 @@ static string gffTypeToString(GffType type) {
         case UTR3:
             return "three_prime_utr";
         case CDS:
-            return "cds";
+            return "CDS";
         case TRANSCRIPT:
             return "transcript";
         case EXON:
             return "exon";
+        case TSS:
+            return "tss";
+        case TTS:
+            return "tts";
         case OTHER:
             return ".";
     }    

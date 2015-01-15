@@ -26,17 +26,17 @@ using std::stringstream;
 
 namespace gts {
 
-typedef boost::unordered_map<string, uint32_t> IdCounter;
-    
 class OverlapFilter : public TranscriptFilter {
    
 private:
     uint32_t windowSize;
+    GFFModelPtr fullModel;
     
 public:
     
-    OverlapFilter(uint32_t windowSize) : TranscriptFilter() {
+    OverlapFilter(uint32_t windowSize, GFFModelPtr fullModel) : TranscriptFilter() {
         this->windowSize = windowSize;
+        this->fullModel = fullModel;
     }
     
     ~OverlapFilter() {}
@@ -46,7 +46,7 @@ public:
     }
     
     string getDescription() {
-        return string("Filters out genomic transcripts which overlap with each other or are within a given window.");
+        return string("Filters out genomic transcripts which overlap with each other or are within a given window.  Checks the genes that have passed all previous filters against the genes present in the original model.");
     }
     
     
@@ -63,23 +63,32 @@ protected:
         
         ss << " - Window Size: " << this->windowSize << endl;
         
-        BOOST_FOREACH(shared_ptr<GFF> gene1, *(in.getGeneList())) {
+        BOOST_FOREACH(GFFPtr gene1, *(in.getGeneList())) {
             
             uint16_t overlapCount = 0;
             
-            BOOST_FOREACH(shared_ptr<GFF> gene2, *(in.getGeneList())) {
+            BOOST_FOREACH(GFFPtr gene2, *(fullModel->getGeneList())) {
                 
-                if (gene1 != gene2) {
+                if (gene1 != gene2 && 
+                    !boost::equals(gene1->GetId(), gene2->GetId()) &&
+                    boost::equals(gene1->GetSeqId(), gene2->GetSeqId())) {
                 
-                    if (boost::equals(gene1->GetSeqId(), gene2->GetSeqId())) {
+                    // This is probably overkill but let's test everything just to be sure!
+                    int32_t startDiff = abs(gene1->GetStart() - gene2->GetStart());
+                    int32_t endDiff = abs(gene1->GetEnd() - gene2->GetEnd());
+                    int32_t rangeDiff1 = abs(gene1->GetStart() - gene2->GetEnd());
+                    int32_t rangeDiff2 = abs(gene1->GetEnd() - gene2->GetStart());
+                    bool overlapping = ((gene1->GetStart() < gene2->GetStart() && gene1->GetEnd() > gene2->GetStart()) || 
+                                        (gene2->GetStart() < gene1->GetStart() && gene2->GetEnd() > gene1->GetStart()));
 
-                        int32_t startDiff = abs(gene1->GetStart() - gene2->GetStart());
-                        int32_t endDiff = abs(gene1->GetEnd() - gene2->GetEnd());
-                        int32_t rangeDiff = gene1->GetStart() - gene2->GetEnd();
-                        if (startDiff <= this->windowSize || endDiff <= this->windowSize || rangeDiff <= this->windowSize) {
-                            overlapCount++;
-                        }
-                    }                    
+                    if (overlapping ||
+                        startDiff <= this->windowSize || 
+                        endDiff <= this->windowSize || 
+                        rangeDiff1 <= this->windowSize ||
+                        rangeDiff2 <= this->windowSize ) {
+
+                        overlapCount++;
+                    }                                      
                 }
             }
 
@@ -88,7 +97,8 @@ protected:
             }
         }
                 
-        ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
+        ss << " - Checking " << in.getNbGenes() << " passed genes against the " << fullModel->getNbGenes() << " genes present in original model" << endl
+           << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
            << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getNbGenes() << endl;
         
         report = ss.str();

@@ -42,7 +42,7 @@ public:
     }
     
     string getDescription() {
-        return string("Filters out transcripts with multiple ORFs and no 5' and 3' UTRs");
+        return string("Keeps transcripts with a single ORF (in transdecoder terms, this means 1 transcript per gene/locus) and at least one 5' and 3' UTR");
     }
     
     
@@ -68,6 +68,7 @@ protected:
             if (geneTranscripts == 0) {
                 cerr << "Found gene with no transcripts: " << gene->GetId() << endl;
             }
+            // Only interested in genes that have a single transcript
             else {
             
                 uint32_t geneOrfs = 0;
@@ -115,8 +116,8 @@ protected:
                                 "Invalid GFF.  Found a transcript with no children: ") + transcript->GetId()));
                     }
 
-                    // We only want transcripts with 1 CDS (ORF) and at least 1 5' and 3' UTR
-                    if (transcriptOrfs == 1 && transcript5UTRs >= 1 && transcript3UTRs >= 1) {
+                    // We only want transcripts with at least 1 5' and 3' UTR
+                    if (transcript5UTRs >= 1 && transcript3UTRs >= 1) {
                         goodTranscripts.push_back(transcript);
                         goodOrfs += transcriptOrfs;
                         good5UTRs += transcript5UTRs;
@@ -124,8 +125,8 @@ protected:
                     }
                 }
 
-                // We only want genes with 1 or more good transcript
-                if (goodTranscripts.size() >= 1) {                
+                // We only want genes with 1 transcript and at least 1 5' and 3' UTR
+                if (geneTranscripts == 1 && goodTranscripts.size() >= 1) {                
 
                     outOrfs += goodOrfs;
                     out5UTRs += good5UTRs;
@@ -148,7 +149,9 @@ protected:
         
         ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
            << " - # Transcripts (mRNA): " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl     
-           << " - # ORFs (CDS): " << outOrfs << " / " << inOrfs << endl;
+           << " - # ORFs (CDS): " << outOrfs << " / " << inOrfs << endl
+           << " - # 5' UTRs: " << out5UTRs << " / " << in5UTRs << endl
+           << " - # 3' UTRs: " << out3UTRs << " / " << in3UTRs << endl;
         
         report = ss.str();
     }
