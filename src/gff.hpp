@@ -193,6 +193,7 @@ private:
     string cdsid;
     string name;
     string alias;
+    string note;
     string parentId;
     string target;
     string gap;
@@ -248,6 +249,7 @@ public:
         cdsid = gff.cdsid;
         name = gff.name;
         alias = gff.alias;
+        note = gff.note;
         parentId = gff.parentId;
         target = gff.target;
         gap = gff.gap;
@@ -406,6 +408,15 @@ public:
     void SetAlias(string alias) {
         this->alias = alias;
     }
+    
+    string GetNote() const {
+        return note;
+    }
+
+    void SetNote(string note) {
+        this->note = note;
+    }
+
 
     bool IsCircular() const {
         return circular;
@@ -627,18 +638,22 @@ public:
         
         elems.push_back(string("ID=") + id);
         
+        if (!parentId.empty()) {
+            elems.push_back(string("Parent=") + parentId);
+        }
+        
         if (!name.empty()) {
             elems.push_back(string("Name=") + name);
+        }
+        
+        if (!note.empty()) {
+            elems.push_back(string("Note=") + note);
         }
         
         if (!alias.empty()) {
             elems.push_back(string("Alias=") + alias);
         }
-        
-        if (!parentId.empty()) {
-            elems.push_back(string("Parent=") + parentId);
-        }
-        
+                        
         if (!target.empty()) {
             elems.push_back(string("Target=") + target);
         }
@@ -701,13 +716,6 @@ public:
     }
 
     void write(ostream& out, string newSource, bool writeChildren) {
-        
-        std::stringstream ss;
-        ss << "ID=" << id << ";";
-        
-        if (!parentId.empty()) {
-            ss << "Parent=" << parentId << ";";
-        }
         
         out << seqId << "\t" 
             << newSource << "\t"
@@ -781,6 +789,9 @@ public:
                     }
                     else if (boost::iequals(key, "Alias")) {
                         gff->SetAlias(val);
+                    }
+                    else if (boost::iequals(key, "Note")) {
+                        gff->SetNote(val);
                     }
                     else if (boost::iequals(key, "Target")) {
                         gff->SetTarget(val);

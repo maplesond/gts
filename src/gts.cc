@@ -249,12 +249,13 @@ protected:
                  
                 const string rootId = thisGene->GetRootId();                
                 
-                string geneName = maps.gtfMap[rootId]->GetGeneId();
+                string gtfGeneId = maps.gtfMap[rootId]->GetGeneId();
+                string gtfTranscriptId = maps.gtfMap[rootId]->GetTranscriptId();
                 
                 // Check to see if this gene cane be merged with the last one
-                if (newGeneMap.count(geneName)) {
+                if (newGeneMap.count(gtfGeneId)) {
                 
-                    GFFPtr lastGene = newGeneMap[geneName];
+                    GFFPtr lastGene = newGeneMap[gtfGeneId];
                     
                     // Sanity check
                     if (genomicCoords && !boost::iequals(thisGene->GetSeqId(), lastGene->GetSeqId())) {
@@ -268,7 +269,8 @@ protected:
                     BOOST_FOREACH(GFFPtr transcript, *transcripts) {
 
                         // Update this transcript's parent gene id.
-                        transcript->SetParentId(geneName);
+                        transcript->SetParentId(gtfGeneId);
+                        transcript->SetAlias(gtfTranscriptId);
                         
                         // Fix CDS Ids
                         fixCDSIds(transcript);
@@ -289,19 +291,20 @@ protected:
                 }
                 else {                                    
                     
-                    // Set the new gene id
-                    thisGene->SetId(geneName);
-                    
-                    if (geneName.empty()) {
+                    if (gtfGeneId.empty()) {
                         BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
                             "Could not find transcript assembly id in GTF file: ") + rootId));
                     }
-
-                    newGeneMap[geneName] = thisGene;
+                    
+                    // Set the new gene id
+                    thisGene->SetId(gtfGeneId);
+                    
+                    newGeneMap[gtfGeneId] = thisGene;
                     
                     // Update the transcripts' parent gene id.
                     BOOST_FOREACH(GFFPtr transcript, *transcripts) {
-                        transcript->SetParentId(geneName);                        
+                        transcript->SetParentId(gtfGeneId);
+                        transcript->SetAlias(gtfTranscriptId);
                         fixCDSIds(transcript);
                     }                                       
                 }
@@ -314,6 +317,19 @@ protected:
         else {
             BOOST_THROW_EXCEPTION(GTSException() << GTSErrorInfo(string(
                         "Must have at least 2 or more genes to rebuild gene model")));
+        }
+        
+        // We should have a proper gene model now, so now just run through and update
+        // attributes so they have sensible values
+        BOOST_FOREACH(GFFPtr g, *(newGeneModel->getGeneList())) {
+            g->SetName(g->GetId());
+            
+            BOOST_FOREACH(GFFPtr t, *(g->GetChildList())) {
+                
+                t->SetName(t->GetId());
+                t->SetParentId(g->GetId());
+                t->SetNote(g->GetId());                
+            }
         }
         
         return newGeneModel;        
@@ -489,7 +505,8 @@ protected:
         
         cout << "Processed " << genomicGffModel->getNbGenes() << " genes and " << genomicGffModel->getTotalNbTranscripts() << " transcripts" << endl
              << "Sent " << goodGeneModel.getNbGenes() << " genes and " << goodGeneModel.getTotalNbTranscripts() << " transcripts to " << passOut << endl
-             << "Sent " << failGeneCount << " genes and " << failTranscriptCount << " transcripts to " << failOut << endl << endl;
+             << "Sent " << failGeneCount << " genes and " << failTranscriptCount << " transcripts to " << failOut << endl << endl
+             << "NOTE: the sum of passed and failed gene counts may exceed the number of processed genes due to multi-transcript genes." << endl << endl;
     }
     
 public :
