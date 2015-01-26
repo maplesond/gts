@@ -99,7 +99,7 @@ protected:
                 
         ss << " - Checking " << in.getNbGenes() << " passed genes against the " << fullModel->getNbGenes() << " genes present in original model" << endl
            << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
-           << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getNbGenes() << endl;
+           << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl;
         
         report = ss.str();
     }

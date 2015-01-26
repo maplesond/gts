@@ -49,11 +49,13 @@ namespace bfs = boost::filesystem;
 #include "fln.hpp"
 #include "filters/transcript_filter.hpp"
 #include "filters/multiple_orf_filter.hpp"
+#include "filters/utr_filter.hpp"
 #include "filters/inconsistent_coords_filter.hpp"
 #include "filters/strand_filter.hpp"
 #include "filters/overlap_filter.hpp"
 using gts::gff::GFF;
 using gts::gff::GFFModel;
+using gts::gff::GffType;
 
 const double DEFAULT_CDS_LEN_RATIO = 0.4;
 const double DEFAULT_CDNA_LEN_RATIO = 0.5;
@@ -340,7 +342,7 @@ protected:
      * @param transcript The transcript containing CDSs to fix
      */
     void fixCDSIds(GFFPtr transcript) {
-        GFFListPtr cdses = transcript->GetAllOfType(gts::gff::CDS);                
+        GFFListPtr cdses = transcript->GetAllOfType(CDS);
         uint16_t cdsIndex = 1;
         BOOST_FOREACH(GFFPtr cds, *cdses) {
 
@@ -389,6 +391,7 @@ protected:
         vector< shared_ptr<TranscriptFilter> > filters;
         
         filters.push_back(make_shared<MultipleOrfFilter>());
+        filters.push_back(make_shared<UTRFilter>());
         filters.push_back(make_shared<InconsistentCoordsFilter>(include, cdsLenRatio, cdnaLenRatio));
         filters.push_back(make_shared<StrandFilter>());
         filters.push_back(make_shared<OverlapFilter>(windowSize, genomicGffModelFixed));

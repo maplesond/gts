@@ -87,7 +87,7 @@ protected:
         stringstream ss;
         
         ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
-           << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getNbGenes() << endl;
+           << " - # Transcripts: " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl;
         
         report = ss.str();
     }

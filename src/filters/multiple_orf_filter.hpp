@@ -18,7 +18,10 @@
 #pragma once
 
 #include <sstream>
-using std::stringstream;        
+using std::stringstream;
+
+#include <boost/unordered_map.hpp>
+using boost::unordered_map;
 
 #include "../gff.hpp"
 #include "transcript_filter.hpp"
@@ -32,7 +35,7 @@ typedef boost::unordered_map<string, uint32_t> IdCounter;
 class MultipleOrfFilter : public TranscriptFilter {
       
 public:
-    
+
     MultipleOrfFilter() : TranscriptFilter() {}
     
     ~MultipleOrfFilter() {}
@@ -46,101 +49,98 @@ public:
     }
     
     
-protected:    
-    
+protected:
+
+    bool isExonListSame(GFFList& exonList1, GFFList& exonList2) {
+
+        if (exonList1.size() != exonList2.size()) {
+
+            return false;
+        }
+
+        // Assume exon list is in coord order
+        for(size_t i = 0; i < exonList1.size(); i++) {
+            GFFPtr e1 = exonList1[i];
+            GFFPtr e2 = exonList2[i];
+
+            if (e1->GetStart() != e2->GetStart() ||
+                    e1->GetEnd() != e2->GetEnd()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+    * Adds all transcripts that are share ORFs to the provided set.
+    */
+    void addMORFs(GFFList& transcripts, unordered_set<GFFPtr>& morfs) {
+
+        for(size_t i = 0; i < transcripts.size(); i++) {
+
+            GFFPtr ti = transcripts[i];
+
+            vector<GFFPtr> multiOrfTranscripts;
+
+            for (size_t j = 0; j < transcripts.size(); j++) {
+
+                if (i != j) {
+
+                    GFFPtr tj = transcripts[j];
+
+                    if (ti->GetStart() == tj->GetStart() &&
+                            ti->GetEnd() == tj->GetEnd()) {
+
+                        cout << "Same transcript: " << ti->GetId() << endl;
+
+                        if (isExonListSame(*(ti->GetAllOfType(EXON)), *(tj->GetAllOfType(EXON)))) {
+                            morfs.insert(ti);
+                            morfs.insert(tj);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     void filterInternal(GFFModel& in, Maps& maps, GFFModel& out) {
         
-        uint32_t inGenes = in.getGeneList()->size();
-        uint32_t inOrfs = 0;
-        uint32_t in5UTRs = 0;
-        uint32_t in3UTRs = 0;
-        
-        uint32_t outOrfs = 0;
-        uint32_t out5UTRs = 0;
-        uint32_t out3UTRs = 0;
-        
-        // Count duplicate mRNAs, 5' UTRs and 3' UTRs
+        // Idenitfy multiple ORFs and remove them
         BOOST_FOREACH(GFFPtr gene, *(in.getGeneList())) {
-            
+
             // Gene should only have mRNAs (transcripts) as children
             uint32_t geneTranscripts = gene->GetNbChildren();
-            
-            if (geneTranscripts == 0) {
-                cerr << "Found gene with no transcripts: " << gene->GetId() << endl;
+
+            GFFList goodTranscripts;
+            unordered_set<GFFPtr> morfs;
+
+            // Identify all those transcripts which share open reading frames
+            addMORFs(*(gene->GetChildList()), morfs);
+
+            if (morfs.size() > 0) {
+                cout << morfs.size() << endl;
             }
-            // Only interested in genes that have a single transcript
-            else {
-            
-                uint32_t geneOrfs = 0;
-                uint32_t gene5UTRs = 0;
-                uint32_t gene3UTRs = 0;
 
-                GFFList goodTranscripts;
-                uint32_t goodOrfs = 0;
-                uint32_t good5UTRs = 0;
-                uint32_t good3UTRs = 0;
+            BOOST_FOREACH(GFFPtr transcript, *(gene->GetChildList())) {
 
-                BOOST_FOREACH(GFFPtr transcript, *(gene->GetChildList())) {
+                // Only add the transcript if it doesn't share an open reading frame with another transcript in this gene
+                if (morfs.find(transcript) == morfs.end()) {
+                    goodTranscripts.push_back(transcript);
+                }
+            }
 
-                    // Gene should only have mRNAs (transcripts) as children
-                    uint32_t transcriptOrfs = 0;
-                    uint32_t transcript5UTRs = 0;
-                    uint32_t transcript3UTRs = 0;
+            // We only want genes with 1 transcript and at least 1 5' and 3' UTR
+            if (goodTranscripts.size() >= 1) {
 
-                    GFFListPtr children = transcript->GetChildList();
+                // Copy gene without child info
+                GFFPtr newGene = make_shared<GFF>(*gene);
 
-                    if (children) {
-                        BOOST_FOREACH(GFFPtr gff, *children) {
-
-                            switch(gff->GetType()) {
-                                case CDS:
-                                    transcriptOrfs++;
-                                    geneOrfs++;
-                                    inOrfs++;
-                                    break;
-                                case UTR5:
-                                    transcript5UTRs++;
-                                    gene5UTRs++;
-                                    in5UTRs++;
-                                    break;
-                                case UTR3:
-                                    transcript3UTRs++;
-                                    gene3UTRs++;
-                                    in3UTRs++;
-                                    break;                            
-                            }
-                        } 
-                    }
-                    else {
-                        BOOST_THROW_EXCEPTION(TranscriptFilterException() << TranscriptFilterErrorInfo(string(
-                                "Invalid GFF.  Found a transcript with no children: ") + transcript->GetId()));
-                    }
-
-                    // We only want transcripts with at least 1 5' and 3' UTR
-                    if (transcript5UTRs >= 1 && transcript3UTRs >= 1) {
-                        goodTranscripts.push_back(transcript);
-                        goodOrfs += transcriptOrfs;
-                        good5UTRs += transcript5UTRs;
-                        good3UTRs += transcript3UTRs;
-                    }
+                BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
+                    newGene->addChild(goodTranscript);
                 }
 
-                // We only want genes with 1 transcript and at least 1 5' and 3' UTR
-                if (geneTranscripts == 1 && goodTranscripts.size() >= 1) {                
-
-                    outOrfs += goodOrfs;
-                    out5UTRs += good5UTRs;
-                    out3UTRs += good3UTRs;
-
-                    // Copy gene without child info
-                    GFFPtr newGene = make_shared<GFF>(*gene);
-
-                    BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
-                        newGene->addChild(goodTranscript);
-                    }
-
-                    out.addGene(newGene);
-                }
+                out.addGene(newGene);
             }
         }
 
@@ -148,11 +148,8 @@ protected:
         stringstream ss;
         
         ss << " - # Genes: " << out.getNbGenes() << " / " << in.getNbGenes() << endl
-           << " - # Transcripts (mRNA): " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl     
-           << " - # ORFs (CDS): " << outOrfs << " / " << inOrfs << endl
-           << " - # 5' UTRs: " << out5UTRs << " / " << in5UTRs << endl
-           << " - # 3' UTRs: " << out3UTRs << " / " << in3UTRs << endl;
-        
+           << " - # Transcripts (mRNA): " << out.getTotalNbTranscripts() << " / " << in.getTotalNbTranscripts() << endl;
+
         report = ss.str();
     }
 };

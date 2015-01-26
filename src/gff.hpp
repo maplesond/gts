@@ -706,6 +706,35 @@ public:
 
         out << boost::algorithm::join(elems, ";");
     }
+
+    // Sort by: seqid / start / end / type
+    struct GFFOrdering {
+        inline bool operator ()(const GFFPtr& a, const GFFPtr& b) {
+
+            int seqId = a->GetSeqId().compare(b->GetSeqId());
+            if (seqId != 0) {
+                return seqId < 0;
+            }
+            else {
+                int32_t sDiff = a->GetStart() - b->GetStart();
+                if (sDiff != 0) {
+                    return a->GetStart() < b->GetStart();
+                }
+                else {
+                    int32_t eDiff = a->GetEnd() - b->GetEnd();
+
+                    if (eDiff != 0) {
+                        // We actually want the record with the largest end point to come
+                        // first... i.e. gene before exon
+                        return a->GetEnd() > b->GetEnd();
+                    }
+                    else {
+                        return a->GetType() < b->GetType();
+                    }
+                }
+            }
+        }
+    };
     
     void write(ostream& out) {
         write(out, false);
@@ -736,6 +765,9 @@ public:
         out << endl;
             
         if (writeChildren) {
+
+            std::sort(this->childList->begin(), this->childList->end(), GFF::GFFOrdering());
+
             BOOST_FOREACH(GFFPtr child, *(this->childList)) {
                 child->write(out, newSource, true);
             }
@@ -907,34 +939,7 @@ public:
     
 };
 
-// Sort by: seqid / start / end / type
-struct GFFOrdering {
-    inline bool operator ()(const GFFPtr& a, const GFFPtr& b) {
-        
-        int seqId = a->GetSeqId().compare(b->GetSeqId());
-        if (seqId != 0) {
-            return seqId < 0;            
-        }
-        else {
-            int32_t sDiff = a->GetStart() - b->GetStart();
-            if (sDiff != 0) {
-                return a->GetStart() < b->GetStart();
-            }
-            else {
-                int32_t eDiff = a->GetEnd() - b->GetEnd();
-                
-                if (eDiff != 0) {
-                    // We actually want the record with the largest end point to come
-                    // first... i.e. gene before exon
-                    return a->GetEnd() > b->GetEnd();
-                }
-                else {
-                    return a->GetType() < b->GetType();
-                }
-            }
-        }        
-    }
-};
+
 
 
 
@@ -1164,7 +1169,7 @@ public:
 
                 if (sort) {
                     cout << " - Sorting GFF records" << endl;
-                    std::sort(this->geneList->begin(), this->geneList->end(), GFFOrdering());
+                    std::sort(this->geneList->begin(), this->geneList->end(), GFF::GFFOrdering());
                 }
 
                 ofstream file(path.c_str());

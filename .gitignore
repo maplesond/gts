@@ -21,3 +21,7 @@
 /gts-0.1.1/
 *.tar.gz
 *.4-scaffolds_Augustus-evidence-pasav3.final.ids.expressed.gff
+/workspace.xml
+/vcs.xml
+/modules.xml
+/CMakeLists.txt

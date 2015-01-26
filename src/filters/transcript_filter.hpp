@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "gff.hpp"
+#include "../gff.hpp"
 
 namespace gts {
  

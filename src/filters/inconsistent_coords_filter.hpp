@@ -17,8 +17,10 @@
 
 #pragma once
 
-#include "gff.hpp"
+#include "../gff.hpp"
 #include "transcript_filter.hpp"
+
+using gts::gff::GffType;
 
 
 namespace gts {
@@ -100,7 +102,7 @@ protected:
                 const string transcriptId = transcript->GetId();
                 const string rootId = transcript->GetRootId();
                 
-                GFFListPtr genomicCDSes = transcript->GetAllOfType(gts::gff::CDS);
+                GFFListPtr genomicCDSes = transcript->GetAllOfType(CDS);
                 
                 if (genomicCDSes) {
                     

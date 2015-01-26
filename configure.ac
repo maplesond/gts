@@ -75,6 +75,11 @@ AC_CHECK_HEADERS([stdio.h])
 AC_CHECK_HEADERS([fstream])
 AC_CHECK_HEADERS([vector])
 
+# Save libs (restore as and when needed)
+SAVED_LIBS="${LIBS}"
+AX_CHECK_ZLIB(, [AC_MSG_ERROR([Zlib not found.  Please ensure that zlib is properly built and configured.])])
+LIBS="${SAVED_LIBS}"
+
 
 ## Check for boost
 AX_BOOST_BASE([1.52],, [AC_MSG_ERROR([Boost not found.  Please ensure that boost is properly built and the BOOST_ROOT environment variable is set.  Alternatively you can override BOOST_ROOT with the --with-boost option.])])
@@ -86,23 +91,27 @@ AX_BOOST_THREAD
 AX_BOOST_UNIT_TEST_FRAMEWORK
 
 # Combine BOOST variables (apart for BOOST_TEST)
-BOOST_LDFLAGS="${BOOST_FILESYSTEM_LDFLAGS} ${BOOST_PROGRAM_OPTIONS_LDFLAGS} ${BOOST_SYSTEM_LDFLAGS} ${BOOST_TIMER_LDFLAGS} ${BOOST_THREAD_LDFLAGS}"
 BOOST_LIBS="${BOOST_FILESYSTEM_LIB} ${BOOST_PROGRAM_OPTIONS_LIB} ${BOOST_SYSTEM_LIB} ${BOOST_TIMER_LIB} ${BOOST_THREAD_LIB}"
+AC_SUBST([BOOST_LIBS])
 
+LIBS="${SAVED_LIBS}"
 
 
 
 #########
 
-AC_SUBST([AM_CPPFLAGS])
+AM_CXXFLAGS="-DCPLUSPLUS"
 AC_SUBST([AM_CXXFLAGS])
-AC_SUBST([AM_CFLAGS])
+
+#AM_CPPFLAGS="${BOOST_CPPFLAGS} ${ZLIB_CPPFLAGS}"
+AM_CPPFLAGS="${BOOST_CPPFLAGS} ${ZLIB_CPPFLAGS}"
+AC_SUBST([AM_CPPFLAGS])
+
+AM_LDFLAGS="${BOOST_LDFLAGS} ${ZLIB_LDFLAGS}"
 AC_SUBST([AM_LDFLAGS])
-AC_SUBST([AM_PATH])
+
+AM_LIBS="${BOOST_LIBS} ${ZLIB_LIB}"
 AC_SUBST([AM_LIBS])
-AC_SUBST([BOOST_CPPFLAGS])
-AC_SUBST([BOOST_LDFLAGS])
-AC_SUBST([BOOST_LIBS])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile tests/Makefile])

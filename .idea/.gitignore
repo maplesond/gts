@@ -1,0 +1,6 @@
+/workspace.xml
+/vcs.xml
+/modules.xml
+*.name
+*.iml
+/misc.xml
