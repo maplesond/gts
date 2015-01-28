@@ -14,9 +14,11 @@ gts_CPPFLAGS = -DCPLUSPLUS @BOOST_CPPFLAGS@ @AM_CPPFLAGS@ -I$(top_srcdir)/src
 gts_LDFLAGS = @BOOST_LDFLAGS@ @AM_LDFLAGS@
 gts_LDADD = @BOOST_LIBS@
 gts_SOURCES =	filters/transcript_filter.hpp \
-		filters/inconsistent_coords_filter.hpp \
+		filters/fln_coords_filter.hpp \
+		filters/cds2cdna_filter.hpp \
 		filters/utr_filter.hpp \
 		filters/multiple_orf_filter.hpp \
+		filters/one_transcript_filter.hpp \
 		filters/strand_filter.hpp \
 		filters/overlap_filter.hpp \
 		gff.hpp \

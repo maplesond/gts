@@ -51,19 +51,18 @@ protected:
         BOOST_FOREACH(GFFPtr gene, *(in.getGeneList())) {
             
             GFFList goodTranscripts;
-            const char geneStrand = gene->GetStrand();            
+            const char gffGeneStrand = gene->GetStrand();            
             
-            if (geneStrand != '.') {
+            if (gffGeneStrand != '.') {
                 
                 GFFListPtr transcripts = gene->GetChildList();
                 BOOST_FOREACH(GFFPtr transcript, *transcripts) {
 
-                    const char transcriptStrand = transcript->GetStrand();
-                    const char gtfStrand = maps.gtfMap[transcript->GetRootId()]->GetStrand();
+                    const char gffTranscriptStrand = transcript->GetStrand();
+                    const char gtfTranscriptStrand = maps.gtfMap[transcript->GetRootId()]->GetStrand();
 
-                    if (transcriptStrand == geneStrand &&
-                        transcriptStrand == gtfStrand &&
-                        transcriptStrand != '.') {
+                    if (gffTranscriptStrand == gffGeneStrand &&
+                        (gffTranscriptStrand == gtfTranscriptStrand || gtfTranscriptStrand == '.')) {
 
                         goodTranscripts.push_back(transcript);
                     } 

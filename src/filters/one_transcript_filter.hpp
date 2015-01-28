@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <sstream>
 using std::stringstream;
 
@@ -33,20 +34,20 @@ namespace gts {
 
 typedef boost::unordered_map<string, uint32_t> IdCounter;
     
-class UTRFilter : public TranscriptFilter {
+class OneTranscriptFilter : public TranscriptFilter {
       
 public:
 
-    UTRFilter() : TranscriptFilter() {}
+    OneTranscriptFilter() : TranscriptFilter() {}
     
-    ~UTRFilter() {}
+    ~OneTranscriptFilter() {}
     
     string getName() {
-        return string("UTR Filter");
+        return string("One Transcript Per Gene Filter");
     }
     
     string getDescription() {
-        return string("Filters out transcripts that do not possess at least one 5' and 3' UTR");
+        return string("Selects the longest ORF transcript per gene");
     }
     
     
@@ -57,32 +58,34 @@ protected:
         uint32_t inGenes = in.getGeneList()->size();
 
 
-        // Idenitfy multiple ORFs and remove them
+        // Identify multiple ORFs and remove them
         BOOST_FOREACH(GFFPtr gene, *(in.getGeneList())) {
 
-            GFFList goodTranscripts;
-
+            int32_t maxCdsLength = 0;
+            GFFPtr longestTranscript;
+            
             BOOST_FOREACH(GFFPtr transcript, *(gene->GetChildList())) {
 
-                GFFListPtr utr5List = transcript->GetAllOfType(UTR5);
-                GFFListPtr utr3List = transcript->GetAllOfType(UTR3);
-
-                if (!utr5List->empty() && !utr3List->empty()) {
-                    goodTranscripts.push_back(transcript);
+                int32_t cdsLength = transcript->GetLengthOfAllTypes(CDS);
+                
+                if (cdsLength > maxCdsLength) {
+                    maxCdsLength = cdsLength;
+                    longestTranscript = transcript;
                 }
             }
-
-            // We only want genes with at least 1 5' and 3' UTR
-            if (goodTranscripts.size() >= 1) {
+            
+            if (longestTranscript) {
 
                 // Copy gene without child info
                 GFFPtr newGene = make_shared<GFF>(*gene);
 
-                BOOST_FOREACH(GFFPtr goodTranscript, goodTranscripts) {
-                    newGene->addChild(goodTranscript);
-                }
-
+                newGene->addChild(longestTranscript);
+                
                 out.addGene(newGene);
+            }
+            else {
+                BOOST_THROW_EXCEPTION(TranscriptFilterException() << TranscriptFilterErrorInfo(string(
+                            "No Transcript found for this gene: " + gene->GetId())));
             }
         }
 

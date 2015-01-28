@@ -39,6 +39,7 @@ struct FLNException: virtual boost::exception, virtual std::exception { };
 enum FLNStatus {
     INTERNAL,
     COMPLETE,
+    PUTATIVE_COMPLETE,
     CTERM,
     NTERM,
     PUTATIVE_CTERM,
@@ -58,6 +59,9 @@ static FLNStatus flnStatusFromString(string& s) {
     }
     else if (boost::iequals(s, "Complete")) {
         return COMPLETE;
+    }
+    else if (boost::iequals(s, "Putative Complete")) {
+        return PUTATIVE_COMPLETE;
     }
     else if (boost::iequals(s, "C-terminus")) {
         return CTERM;
@@ -140,21 +144,21 @@ public:
         this->status = status;
     }
     
-        int32_t GetSEnd() const {
-            return sEnd;
-        }
+    int32_t GetSEnd() const {
+        return sEnd;
+    }
 
-        void SetSEnd(int32_t sEnd) {
-            this->sEnd = sEnd;
-        }
+    void SetSEnd(int32_t sEnd) {
+        this->sEnd = sEnd;
+    }
 
-        int32_t GetSStart() const {
-            return sStart;
-        }
+    int32_t GetSStart() const {
+        return sStart;
+    }
 
-        void SetSStart(int32_t sStart) {
-            this->sStart = sStart;
-        }
+    void SetSStart(int32_t sStart) {
+        this->sStart = sStart;
+    }
 
 
     
@@ -175,11 +179,8 @@ public:
         db->SetStatus(flnStatusFromString(parts[4]));
         
         if (db->GetStatus() != MISASSEMBLED && parts.size() >= 14) {
-            int32_t os = parts[12].empty() ? -1 : lexical_cast<int32_t>(parts[12]);
-            int32_t oe = parts[13].empty() ? -1 : lexical_cast<int32_t>(parts[13]);
-
-            db->SetOrfStart(os < oe ? os : oe);
-            db->SetOrfEnd(os < oe ? oe : os);
+            db->SetOrfStart(parts[12].empty() ? -1 : lexical_cast<int32_t>(parts[12]));
+            db->SetOrfEnd(parts[13].empty() ? -1 : lexical_cast<int32_t>(parts[13]));
             
             if (parts.size() >= 16) {
                 int32_t ss = parts[14].empty() ? -1 : lexical_cast<int32_t>(parts[14]);

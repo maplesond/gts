@@ -390,7 +390,7 @@ public:
     }
     
     int32_t GetLength() const {
-        return std::abs(end - start);
+        return std::abs(end - start) + 1;
     }
 
     int32_t GetStart() const {
@@ -604,6 +604,22 @@ public:
         }
         
         return gffs;
+    }
+    
+    int32_t GetLengthOfAllTypes(GffType type) const {
+        
+        GFFListPtr features = this->GetAllOfType(type);
+        
+        int32_t len = 0;
+        
+        if (features) {
+            // This loop just counts how may genomic CDSes we also find in the cluster aligned file
+            BOOST_FOREACH(GFFPtr feature, *features) {
+                len += feature->GetLength();
+            }
+        }
+        
+        return len;
     }
     
     

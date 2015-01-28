@@ -45,7 +45,7 @@ public:
     }
     
     string getDescription() {
-        return string("Keeps transcripts with a single ORF (in transdecoder terms, this means 1 transcript per gene/locus) and at least one 5' and 3' UTR");
+        return string("Filters out transcripts with multiple ORFs");
     }
     
     
@@ -92,8 +92,6 @@ protected:
                     if (ti->GetStart() == tj->GetStart() &&
                             ti->GetEnd() == tj->GetEnd()) {
 
-                        cout << "Same transcript: " << ti->GetId() << endl;
-
                         if (isExonListSame(*(ti->GetAllOfType(EXON)), *(tj->GetAllOfType(EXON)))) {
                             morfs.insert(ti);
                             morfs.insert(tj);
@@ -117,10 +115,6 @@ protected:
 
             // Identify all those transcripts which share open reading frames
             addMORFs(*(gene->GetChildList()), morfs);
-
-            if (morfs.size() > 0) {
-                cout << morfs.size() << endl;
-            }
 
             BOOST_FOREACH(GFFPtr transcript, *(gene->GetChildList())) {
 
