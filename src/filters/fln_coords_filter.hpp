@@ -25,7 +25,7 @@ using gts::gff::GffType;
 
 namespace gts {
 
-const int32_t POS_THRESHOLD = 10;
+const int32_t POS_THRESHOLD = 9;
 const int32_t LONG_CDS_LEN_THRESHOLD = 200;
     
 class FlnCoordsFilter : public TranscriptFilter {
@@ -70,6 +70,8 @@ protected:
         uint32_t nbConsistent = 0;
         uint32_t nbFlnDbAnnotConsistent = 0;
         uint32_t nbFlnNewCodingConsistent = 0;
+        uint32_t nbNotInFln = 0;
+        uint32_t nbInconsistentCoords = 0;
         
         BOOST_FOREACH(GFFPtr gene, *in.getGeneList()) {        
             
@@ -87,16 +89,20 @@ protected:
                             "No CDSes found for this transcript: " + transcript->GetId())));
                 }
                 
+                // Translate to transcript coords
                 int32_t cdsStartOffset = getCdsStartOffset(transcript);
-                int32_t cdsEndOffset = cdsStartOffset + cdsLength - 1;
+                int32_t cdsEndOffset = cdsStartOffset + cdsLength - 1 - 2;
                 
                 bool consistent = false;
-                    
+                
                 // Check: this transcript's CDS is consistent with full lengther (dbannotated)
                 if (maps.uniqFlnCds.count(rootId)) {
 
-                    if (consistent = isTDCAndFLNConsistent(cdsStartOffset, cdsEndOffset, maps.uniqFlnCds[rootId], gts::POS_THRESHOLD, 2)) {
+                    if (consistent = isTDCAndFLNConsistent(cdsStartOffset, cdsEndOffset, maps.uniqFlnCds[rootId], gts::POS_THRESHOLD, gts::POS_THRESHOLD)) {
                         nbFlnDbAnnotConsistent++;
+                    }
+                    else {
+                        nbInconsistentCoords++;
                     }
                 }
                 // Check: If requested by the user, and we didn't find anything is fln dbannotated, check if this transcript's 
@@ -106,6 +112,12 @@ protected:
                             cdsLength >= gts::LONG_CDS_LEN_THRESHOLD)) {
                         nbFlnNewCodingConsistent++;
                     }
+                    else {
+                        nbInconsistentCoords++;
+                    }
+                }
+                else {
+                    nbNotInFln++;
                 }
 
                 if (consistent) {
@@ -131,7 +143,10 @@ protected:
         stringstream ss;
         
         ss << " - Including consistent full lengther new coding hits: " << std::boolalpha << include << endl
+           << " - Allowing " << POS_THRESHOLD << "bp wobble on CDS start and stop positions" << endl
            << " ------------" << endl
+           << " - # Transcripts NOT found in Full Lengther: " << nbNotInFln << endl
+           << " - # Transcripts with inconsistent coordinates: " << nbInconsistentCoords << endl
            << " - # Transcripts with CDS consistent with Full Lengther coordinates: " << nbConsistent << endl
            << "   - # From DBAnnotated file: " << nbFlnDbAnnotConsistent << endl           
            << "   - # From NewCoding file (will be 0 if not requested): " << nbFlnNewCodingConsistent << endl
@@ -147,10 +162,8 @@ protected:
         int32_t deltaStart = std::abs(cdsStartOffset - fln->GetOrfStart());
         int32_t deltaEnd = std::abs(cdsEnd - fln->GetOrfEnd());
 
-        //cout << "TranscriptID: " << fln->GetId() << endl;
-        //cout << "Start\t" << cdsStartOffset << "\t" << fln->GetOrfStart() << "\t" << deltaStart << endl;
-        //cout << "End\t" << cdsEnd << "\t" << fln->GetOrfEnd() << "\t" << deltaEnd << endl;
-
+        //cout << deltaStart << "\t" << deltaEnd << endl;
+        
         return deltaStart <= startThreshold && deltaEnd <= endThreshold;
     }
     
@@ -170,24 +183,65 @@ protected:
            BOOST_THROW_EXCEPTION(TranscriptFilterException() << TranscriptFilterErrorInfo(string(
                     "No Exons found for this transcript: " + transcript->GetId())));
         }
+
+        // Check for ordering of CDSes and exons before reversing        
+        if (transcript->GetStrand() == '-') {
+            if (exons->size() > 1 && exons->at(0)->GetStart() < exons->at(1)->GetStart()) {            
+                std::reverse(exons->begin(), exons->end());
+            }
+            
+            if (cdses->size() > 1 && cdses->at(0)->GetStart() < cdses->at(1)->GetStart()) {
+                std::reverse(cdses->begin(), cdses->end());
+            }
+        }
          
         GFFPtr cds = cdses->at(0);        
         
         int32_t cDnaLen = 0;
+        int32_t lastExonEnd = 0;
+        int32_t lastCdsEnd = 0;
         for(size_t i = 0; i < exons->size(); i++) {
             
             GFFPtr exon = exons->at(i);
             
-            if (exon->GetStart() < cds->GetStart()) {
+            // If on negative strand start and end of each component will need to be inverted
+            
+            int32_t exonStart = transcript->GetStrand() == '+' ?
+                exon->GetStart() :
+                exon->GetEnd();
+            
+            int32_t exonEnd = transcript->GetStrand() == '+' ?
+                exon->GetEnd() :
+                exon->GetStart();
+            
+            int32_t cdsStart = transcript->GetStrand() == '+' ?
+                cds->GetStart():
+                cds->GetEnd();
+            
+            int32_t cdsEnd = transcript->GetStrand() == '+' ?
+                cds->GetEnd():
+                cds->GetStart();
+            
+            // Keep iterating until exonStart exceeds CDS start
+            if ((transcript->GetStrand() == '+' && exonStart < cdsStart) ||
+                (transcript->GetStrand() == '-' && exonStart > cdsStart)) {
                 cDnaLen += exon->GetLength();
+                lastExonEnd = exonEnd;
+                lastCdsEnd = cdsEnd;
             }
             else {
                 break;
             }
         } 
         
+        int32_t cdsStart = transcript->GetStrand() == '+' ?
+                cds->GetStart():
+                cds->GetEnd();
+        
+        int32_t diff = std::abs(lastExonEnd - cdsStart);
+        
         // Add one to get into the 1-based coord system of full lengther
-        return cDnaLen - cds->GetLength() + 1;
+        return cDnaLen - diff;
     }
 };
 

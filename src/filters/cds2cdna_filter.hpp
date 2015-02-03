@@ -38,11 +38,11 @@ public:
     ~Cds2CDnaFilter() {}
     
     string getName() {
-        return string("CDS 2 CDNA Length Ratio Transcript Filter");
+        return string("CDS 2 cDNA Length Ratio Transcript Filter");
     }
     
     string getDescription() {
-        return string("Filters out transcripts whose CDS 2 CDNA length ratio is below threshold");
+        return string("Filters out transcripts whose CDS 2 cDNA length ratio is below threshold");
     }
     
     double getCdsFrac() const {
