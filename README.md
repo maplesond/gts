@@ -24,7 +24,11 @@ After GTS has been installed, the `gts` executable should be available.
 
 Typing `gts` or `gts --help` at the command line will present you with the GTS help message.
 
-## Dependencies
+##Notes
+
+We have found Transdecoder V2.0.1 to produce transcripts with CDS and 5' and 3' UTRs, when it's possible the 5' or 3' UTRs are actually partials and not labelled as such in the GFF type output (they are labelled in the attribute tags).  This information is currently ignored by GTS.  What this means is that stage 2 (the 5' and 3' UTR check) will end up with fewer transcripts being filtered (as more transcripts will have 5' and 3' UTRs marked up), however these partial UTRs should still get filtered out in stage 3 when we look at comparing coordinates with full lengther.  The end result is that the output will be correct but the filtering will be heavier in stage 3 rather than stage 2.
+
+##Dependencies
 
 Uses Boost.  Developed with Boost V1.52.  Please make sure this is properly installed
 and configured before compiling or running GTS.
